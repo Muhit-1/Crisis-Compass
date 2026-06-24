@@ -10,15 +10,20 @@
   import { eventsStore } from './lib/eventsStore.svelte'
   import { timelineStore } from './lib/timelineStore.svelte'
   import type { EonetEvent } from './types/eonet'
+  import { getCurrentWeather } from './lib/api/weather' // TEMP
 
   let activeCategories = $state<Set<string>>(new Set(Object.keys(CATEGORY_STYLES)))
   let selectedEvent = $state<EonetEvent | null>(null)
   let mapView: MapView
 
-  // The map always renders from one merged source: live (auto-refreshing)
-  // events normally, or a frozen historical snapshot while the timeline is
-  // being scrubbed. The live ticker/stats bar are intentionally NOT affected
-  // by this — they always reflect the real-time pulse.
+  // TEMP: API connectivity check — delete this whole block (state + onMount snippet + header markup) when done
+  let weatherStatus = $state<'checking' | 'ok' | 'error'>('checking')
+  const eonetStatus = $derived(
+    eventsStore.error ? 'error' : eventsStore.loading && eventsStore.events.length === 0 ? 'checking' : 'ok',
+  )
+  // END TEMP
+
+
   const displayedEvents = $derived(
     timelineStore.active ? timelineStore.eventsOnSelectedDay : eventsStore.events,
   )
@@ -50,12 +55,19 @@
 
   onMount(() => {
     eventsStore.startAutoRefresh()
+      // TEMP: remove this block
+    getCurrentWeather(20, 0)
+      .then(() => (weatherStatus = 'ok'))
+      .catch(() => (weatherStatus = 'error'))
+    // END TEMP
   })
 
   onDestroy(() => {
     eventsStore.stopAutoRefresh()
   })
 </script>
+
+
 
 <div class="flex h-screen w-screen flex-col bg-[#FAF6EC]">
   <header
@@ -65,6 +77,35 @@
       <Icon name="compass" size={18} />
       Crisis Compass
     </h1>
+
+<!-- TEMP: API connection status — delete this div when done -->
+    <div class="flex items-center gap-2 text-[11px] font-medium">
+      <span
+        class={`rounded-full px-2 py-0.5 ${
+          eonetStatus === 'ok'
+            ? 'bg-[#8FBF8F]/20 text-[#4f7a4f]'
+            : eonetStatus === 'error'
+              ? 'bg-[#C97064]/20 text-[#C97064]'
+              : 'bg-[#E0A458]/20 text-[#8a662f]'
+        }`}
+      >
+        EONET {eonetStatus === 'ok' ? '✓ connected' : eonetStatus === 'error' ? '✗ failed' : '… checking'}
+      </span>
+      <span
+        class={`rounded-full px-2 py-0.5 ${
+          weatherStatus === 'ok'
+            ? 'bg-[#8FBF8F]/20 text-[#4f7a4f]'
+            : weatherStatus === 'error'
+              ? 'bg-[#C97064]/20 text-[#C97064]'
+              : 'bg-[#E0A458]/20 text-[#8a662f]'
+        }`}
+      >
+        Open-Meteo {weatherStatus === 'ok' ? '✓ connected' : weatherStatus === 'error' ? '✗ failed' : '… checking'}
+      </span>
+    </div>
+    <!-- END TEMP -->
+
+
     <span class="text-xs text-[#8A8473]">Live natural events — NASA EONET</span>
   </header>
 

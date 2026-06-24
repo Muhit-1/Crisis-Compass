@@ -19,6 +19,11 @@ export type IconName =
   | 'landslides'
   | 'manmade'
   | 'snow'
+  | 'play'
+  | 'pause'
+  | 'chevronUp'
+  | 'chevronDown'
+  | 'skipForward'
   | 'tempExtremes'
   | 'waterColor'
   | 'other'
@@ -30,6 +35,7 @@ export type IconName =
   | 'sun'
   | 'pulse'
   | 'link'
+
 
 export const ICONS: Record<IconName, string> = {
   compass: `
@@ -125,4 +131,9 @@ export const ICONS: Record<IconName, string> = {
     <path d="M11 7.5l1.4-1.4a3.3 3.3 0 1 1 4.7 4.7L15.7 12.2" />
     <path d="M13 16.5l-1.4 1.4a3.3 3.3 0 1 1-4.7-4.7l1.4-1.4" />
   `,
+  play: `<path d="M7 4.5v15l13-7.5Z" fill="currentColor" stroke="none" />`,
+  pause: `<rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none" /><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none" />`,
+  chevronUp: `<path d="M6 14l6-6 6 6" />`,
+  chevronDown: `<path d="M6 10l6 6 6-6" />`,
+  skipForward: `<path d="M5 5v14l10-7Z" fill="currentColor" stroke="none" /><rect x="17" y="5" width="2.2" height="14" fill="currentColor" stroke="none" />`,
 }
