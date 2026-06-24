@@ -3,8 +3,7 @@ import type { OpenMeteoForecastResponse, WeatherSnapshot } from '../../types/wea
 const OPEN_METEO_BASE_URL = 'https://api.open-meteo.com/v1/forecast'
 
 // Cache weather lookups per rounded lat/lng for a few minutes so repeated
-// clicks on the same region don't spam the API. Phase 1 just stubs the shape;
-// wired into the UI in Phase 2.
+// clicks on the same region don't spam the API.
 const CACHE_TTL_MS = 5 * 60 * 1000
 const cache = new Map<string, { expires: number; data: WeatherSnapshot }>()
 
@@ -12,11 +11,22 @@ function cacheKey(lat: number, lng: number): string {
   return `${lat.toFixed(1)},${lng.toFixed(1)}`
 }
 
+export interface GetWeatherOptions {
+  /** Abort the request if it hasn't resolved within this many ms. Default 10000. */
+  timeoutMs?: number
+}
+
 /**
  * Fetch the current weather snapshot for a given coordinate.
- * Throws on network failure or a non-2xx response so callers can show an error state.
+ * Throws on network failure, timeout, or a non-2xx response so callers can show an error state.
  */
-export async function getCurrentWeather(lat: number, lng: number): Promise<WeatherSnapshot> {
+export async function getCurrentWeather(
+  lat: number,
+  lng: number,
+  options: GetWeatherOptions = {},
+): Promise<WeatherSnapshot> {
+  const { timeoutMs = 10000 } = options
+
   const key = cacheKey(lat, lng)
   const cached = cache.get(key)
   if (cached && cached.expires > Date.now()) {
@@ -31,21 +41,36 @@ export async function getCurrentWeather(lat: number, lng: number): Promise<Weath
 
   const url = `${OPEN_METEO_BASE_URL}?${params.toString()}`
 
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`Open-Meteo request failed: ${res.status} ${res.statusText}`)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok) {
+      throw new Error(`Open-Meteo request failed: ${res.status} ${res.statusText}`)
+    }
+
+    const data = (await res.json()) as OpenMeteoForecastResponse
+
+    const snapshot: WeatherSnapshot = {
+      temperatureC: data.current.temperature_2m,
+      windSpeedKph: data.current.wind_speed_10m,
+      precipitationMm: data.current.precipitation,
+      uvIndex: data.current.uv_index ?? null,
+      observedAt: data.current.time,
+    }
+
+    cache.set(key, { expires: Date.now() + CACHE_TTL_MS, data: snapshot })
+    return snapshot
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(`Weather request timed out after ${Math.round(timeoutMs / 1000)}s.`)
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Network request to Open-Meteo failed.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  const data = (await res.json()) as OpenMeteoForecastResponse
-
-  const snapshot: WeatherSnapshot = {
-    temperatureC: data.current.temperature_2m,
-    windSpeedKph: data.current.wind_speed_10m,
-    precipitationMm: data.current.precipitation,
-    uvIndex: data.current.uv_index ?? null,
-    observedAt: data.current.time,
-  }
-
-  cache.set(key, { expires: Date.now() + CACHE_TTL_MS, data: snapshot })
-  return snapshot
 }

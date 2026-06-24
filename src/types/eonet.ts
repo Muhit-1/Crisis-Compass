@@ -74,3 +74,14 @@ export interface EonetPointGeometry extends EonetGeometry {
 export function isPointGeometry(g: EonetGeometry): g is EonetPointGeometry {
   return g.type === 'Point'
 }
+
+/** Returns the most recent geometry entry for an event (oldest -> newest order). */
+export function latestGeometryOf(event: EonetEvent): EonetGeometry | undefined {
+  return event.geometry[event.geometry.length - 1]
+}
+
+/** Returns the timestamp (ms) of an event's most recent geometry entry, or 0 if none. */
+export function latestEventTimestamp(event: EonetEvent): number {
+  const geom = latestGeometryOf(event)
+  return geom ? new Date(geom.date).getTime() : 0
+}
