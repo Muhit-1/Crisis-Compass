@@ -14,6 +14,8 @@
   import type { EonetEvent } from "../types/eonet";
   import { getCategoryStyle } from "./categoryStyles";
   import { ICONS } from "./icons";
+  import { getCurrentWeather } from "./api/weather";
+  import type { WeatherSnapshot } from "../types/weather";
 
   // Fix Leaflet default icon issue (Vite)
   // @ts-expect-error
@@ -31,6 +33,7 @@
     loading?: boolean;
     error?: string | null;
     onRetry?: () => void;
+    showWeatherOnMap?: boolean;
   }
 
   let {
@@ -40,6 +43,7 @@
     loading = false,
     error = null,
     onRetry,
+    showWeatherOnMap = false,
   }: Props = $props();
 
   let mapContainer: HTMLDivElement;
@@ -57,7 +61,7 @@
     if (!mapContainer) return 2;
     const maxDim = Math.max(
       mapContainer.clientWidth,
-      mapContainer.clientHeight
+      mapContainer.clientHeight,
     );
     return Math.max(0, Math.ceil(Math.log2(maxDim / TILE_SIZE)));
   }
@@ -66,6 +70,18 @@
 
   function tooltipIconSvg(color: string, iconKey: keyof typeof ICONS): string {
     return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px">${ICONS[iconKey]}</svg>`;
+  }
+
+  function formatWeatherLine(w: WeatherSnapshot): string {
+    const chance =
+      w.precipChancePct !== null ? `${w.precipChancePct}% rain` : "—";
+
+    return `<div style="margin-top:2px;display:flex;gap:6px;flex-wrap:wrap;color:#33394A">
+      <span>${Math.round(w.temperatureC)}°C (feels ${Math.round(w.feelsLikeC)}°)</span>
+      <span>${Math.round(w.windSpeedKph)} km/h</span>
+      <span>${w.humidityPct}% hum</span>
+      <span>${chance}</span>
+    </div>`;
   }
 
   function iconFor(event: EonetEvent): L.DivIcon {
@@ -87,12 +103,11 @@
 
     for (const event of events) {
       const matchesFilter = event.categories.some((c) =>
-        activeCategories.has(c.id)
+        activeCategories.has(c.id),
       );
       if (!matchesFilter) continue;
 
-      const latestGeometry =
-        event.geometry[event.geometry.length - 1];
+      const latestGeometry = event.geometry[event.geometry.length - 1];
 
       if (!latestGeometry || !isPointGeometry(latestGeometry)) continue;
 
@@ -102,13 +117,35 @@
       const style = getCategoryStyle(event.categories[0]?.id ?? "");
       const categoryNames = event.categories.map((c) => c.title).join(", ");
 
+      const baseTooltipHtml = `<strong>${tooltipIconSvg(
+        style.color,
+        style.iconName,
+      )} ${event.title}</strong><br/><span style="color:#8A8473">${categoryNames}</span>`;
+
       marker.bindTooltip(
-        `<strong>${tooltipIconSvg(
-          style.color,
-          style.iconName
-        )} ${event.title}</strong><br/><span style="color:#8A8473">${categoryNames}</span>`,
-        { direction: "top", offset: [0, -8] }
+        showWeatherOnMap
+          ? baseTooltipHtml +
+              `<div style="margin-top:2px;color:#8A8473">Loading weather…</div>`
+          : baseTooltipHtml,
+        { direction: "top", offset: [0, -8] },
       );
+
+      if (showWeatherOnMap) {
+        marker.on("tooltipopen", () => {
+          getCurrentWeather(lat, lng)
+            .then((w) =>
+              marker.setTooltipContent(
+                baseTooltipHtml + formatWeatherLine(w),
+              ),
+            )
+            .catch(() =>
+              marker.setTooltipContent(
+                baseTooltipHtml +
+                  `<div style="margin-top:2px;color:#C97064">Weather unavailable</div>`,
+              ),
+            );
+        });
+      }
 
       marker.on("click", () => onSelectEvent(event));
 
@@ -122,8 +159,7 @@
   export function flyTo(event: EonetEvent): void {
     if (!map) return;
 
-    const latestGeometry =
-      event.geometry[event.geometry.length - 1];
+    const latestGeometry = event.geometry[event.geometry.length - 1];
 
     if (!latestGeometry || !isPointGeometry(latestGeometry)) return;
 
@@ -160,9 +196,6 @@
 
     renderMarkers();
 
-    // =========================
-    // Resize handling
-    // =========================
     resizeObserver = new ResizeObserver(() => {
       if (!map) return;
 
@@ -185,6 +218,7 @@
   $effect(() => {
     events;
     activeCategories;
+    showWeatherOnMap;
     renderMarkers();
   });
 </script>
@@ -193,13 +227,17 @@
   <div bind:this={mapContainer} class="h-full w-full"></div>
 
   {#if loading}
-    <div class="absolute top-4 left-4 z-[1000] rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow">
+    <div
+      class="absolute top-4 left-4 z-[1000] rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow"
+    >
       Loading events…
     </div>
   {/if}
 
   {#if error}
-    <div class="absolute top-4 left-4 z-[1000] flex max-w-xs flex-col gap-2 rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#C97064] shadow">
+    <div
+      class="absolute top-4 left-4 z-[1000] flex max-w-xs flex-col gap-2 rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#C97064] shadow"
+    >
       <span>Couldn't load events: {error}</span>
 
       {#if onRetry}
@@ -215,7 +253,9 @@
   {/if}
 
   {#if !loading && !error}
-    <div class="absolute top-4 left-4 z-[1000] rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow">
+    <div
+      class="absolute top-4 left-4 z-[1000] rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow"
+    >
       {eventCount} event{eventCount === 1 ? "" : "s"} shown
     </div>
   {/if}
@@ -257,3 +297,4 @@
     }
   }
 </style>
+```

@@ -17,8 +17,24 @@ export interface GetWeatherOptions {
 }
 
 /**
+ * Get precipitation probability for the current hour
+ */
+function precipChanceFor(data: OpenMeteoForecastResponse): number | null {
+  const hourly = data.hourly
+  if (!hourly?.time?.length) return null
+
+  const targetHour = data.current.time.slice(0, 13) // "YYYY-MM-DDTHH"
+  const idx = hourly.time.findIndex((t) => t.slice(0, 13) === targetHour)
+
+  return (
+    (idx >= 0
+      ? hourly.precipitation_probability[idx]
+      : hourly.precipitation_probability[0]) ?? null
+  )
+}
+
+/**
  * Fetch the current weather snapshot for a given coordinate.
- * Throws on network failure, timeout, or a non-2xx response so callers can show an error state.
  */
 export async function getCurrentWeather(
   lat: number,
@@ -33,10 +49,15 @@ export async function getCurrentWeather(
     return cached.data
   }
 
+  // ✅ UPDATED REQUEST PARAMS
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lng),
-    current: 'temperature_2m,wind_speed_10m,precipitation,uv_index',
+    timezone: 'auto',
+    current:
+      'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,uv_index',
+    hourly: 'precipitation_probability',
+    forecast_days: '1',
   })
 
   const url = `${OPEN_METEO_BASE_URL}?${params.toString()}`
@@ -46,16 +67,21 @@ export async function getCurrentWeather(
 
   try {
     const res = await fetch(url, { signal: controller.signal })
+
     if (!res.ok) {
       throw new Error(`Open-Meteo request failed: ${res.status} ${res.statusText}`)
     }
 
     const data = (await res.json()) as OpenMeteoForecastResponse
 
+    // ✅ UPDATED SNAPSHOT (your new structure)
     const snapshot: WeatherSnapshot = {
       temperatureC: data.current.temperature_2m,
+      feelsLikeC: data.current.apparent_temperature,
+      humidityPct: data.current.relative_humidity_2m,
       windSpeedKph: data.current.wind_speed_10m,
       precipitationMm: data.current.precipitation,
+      precipChancePct: precipChanceFor(data),
       uvIndex: data.current.uv_index ?? null,
       observedAt: data.current.time,
     }

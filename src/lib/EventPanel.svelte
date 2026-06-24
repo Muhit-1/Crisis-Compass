@@ -1,52 +1,61 @@
 <script lang="ts">
-  import { getCurrentWeather } from './api/weather'
-  import { isPointGeometry } from '../types/eonet'
-  import type { EonetEvent } from '../types/eonet'
-  import type { WeatherSnapshot } from '../types/weather'
-  import { getCategoryStyle } from './categoryStyles'
-  import { computeSeverity, SEVERITY_COLORS, SEVERITY_LABELS } from './severity'
-  import Icon from './Icon.svelte'
+  import { getCurrentWeather } from "./api/weather";
+  import { isPointGeometry } from "../types/eonet";
+  import type { EonetEvent } from "../types/eonet";
+  import type { WeatherSnapshot } from "../types/weather";
+  import { getCategoryStyle } from "./categoryStyles";
+  import {
+    computeSeverity,
+    SEVERITY_COLORS,
+    SEVERITY_LABELS,
+  } from "./severity";
+  import Icon from "./Icon.svelte";
 
   interface Props {
-    event: EonetEvent
-    onClose: () => void
+    event: EonetEvent;
+    onClose: () => void;
   }
 
-  let { event, onClose }: Props = $props()
+  let { event, onClose }: Props = $props();
 
-  let weather = $state<WeatherSnapshot | null>(null)
-  let weatherLoading = $state(false)
-  let weatherError = $state<string | null>(null)
+  let weather = $state<WeatherSnapshot | null>(null);
+  let weatherLoading = $state(false);
+  let weatherError = $state<string | null>(null);
 
-  const latestGeometry = $derived(event.geometry[event.geometry.length - 1])
+  const latestGeometry = $derived(event.geometry[event.geometry.length - 1]);
   const coords = $derived(
-    latestGeometry && isPointGeometry(latestGeometry) ? latestGeometry.coordinates : null,
-  )
-  const primaryStyle = $derived(getCategoryStyle(event.categories[0]?.id ?? ''))
+    latestGeometry && isPointGeometry(latestGeometry)
+      ? latestGeometry.coordinates
+      : null,
+  );
+  const primaryStyle = $derived(
+    getCategoryStyle(event.categories[0]?.id ?? ""),
+  );
   // Recomputes automatically once `weather` resolves, refining the estimate with live conditions.
-  const severity = $derived(computeSeverity(event, weather))
+  const severity = $derived(computeSeverity(event, weather));
 
   async function loadWeather() {
-    if (!coords) return
-    const [lng, lat] = coords
-    weatherLoading = true
-    weatherError = null
+    if (!coords) return;
+    const [lng, lat] = coords;
+    weatherLoading = true;
+    weatherError = null;
     try {
-      weather = await getCurrentWeather(lat, lng)
+      weather = await getCurrentWeather(lat, lng);
     } catch (err) {
-      weatherError = err instanceof Error ? err.message : 'Failed to load weather'
+      weatherError =
+        err instanceof Error ? err.message : "Failed to load weather";
     } finally {
-      weatherLoading = false
+      weatherLoading = false;
     }
   }
 
   // Re-fetch weather whenever a different event is selected.
   $effect(() => {
-    event
-    weather = null
-    weatherError = null
-    loadWeather()
-  })
+    event;
+    weather = null;
+    weatherError = null;
+    loadWeather();
+  });
 </script>
 
 <aside
@@ -76,7 +85,7 @@
   </div>
 
   <p class="mt-1 text-xs text-[#8A8473]">
-    {event.categories.map((c) => c.title).join(', ')}
+    {event.categories.map((c) => c.title).join(", ")}
   </p>
 
   <div class="mt-2 flex items-center gap-1.5">
@@ -88,12 +97,12 @@
     </span>
     <span class="text-[10px] text-[#8A8473]">estimate, not official</span>
   </div>
-  <p class="mt-1 text-[11px] text-[#8A8473]">{severity.reasons.join(' · ')}</p>
+  <p class="mt-1 text-[11px] text-[#8A8473]">{severity.reasons.join(" · ")}</p>
 
   <dl class="mt-3 space-y-1 text-xs text-[#33394A]">
     <div class="flex justify-between">
       <dt class="text-[#8A8473]">Status</dt>
-      <dd>{event.closed ? 'Closed' : 'Open'}</dd>
+      <dd>{event.closed ? "Closed" : "Open"}</dd>
     </div>
     {#if latestGeometry}
       <div class="flex justify-between">
@@ -108,10 +117,13 @@
   {/if}
 
   <div class="mt-4 border-t border-[#E8E0CC] pt-3">
-    <h3 class="text-xs font-semibold text-[#33394A]">Current weather on-site</h3>
+    <h3 class="text-xs font-semibold text-[#33394A]">
+      Current weather on-site
+    </h3>
     {#if event.closed}
       <p class="mt-0.5 text-[10px] text-[#8A8473]">
-        This event is closed — showing today's weather, not conditions from when it occurred.
+        This event is closed — showing today's weather, not conditions from when
+        it occurred.
       </p>
     {/if}
 
@@ -127,28 +139,39 @@
         Retry
       </button>
     {:else if weather}
-      <ul class="mt-1 space-y-1 text-xs text-[#33394A]">
-        <li class="flex items-center gap-1.5">
+      <div class="mt-1 grid grid-cols-2 gap-y-1 gap-x-3 text-xs text-[#33394A]">
+        <div class="flex items-center gap-1.5">
           <Icon name="thermometer" size={13} class="text-[#8A8473]" />
-          {weather.temperatureC}°C
-        </li>
-        <li class="flex items-center gap-1.5">
+          {Math.round(weather.temperatureC)}°C
+          <span class="text-[#8A8473]"
+            >(feels {Math.round(weather.feelsLikeC)}°)</span
+          >
+        </div>
+        <div class="flex items-center gap-1.5">
           <Icon name="wind" size={13} class="text-[#8A8473]" />
-          {weather.windSpeedKph} km/h wind
-        </li>
-        <li class="flex items-center gap-1.5">
+          {Math.round(weather.windSpeedKph)} km/h
+        </div>
+        <div class="flex items-center gap-1.5">
+          <Icon name="humidity" size={13} class="text-[#8A8473]" />
+          {weather.humidityPct}% humidity
+        </div>
+        <div class="flex items-center gap-1.5">
           <Icon name="rain" size={13} class="text-[#8A8473]" />
-          {weather.precipitationMm} mm precipitation
-        </li>
-        {#if weather.uvIndex !== null}
-          <li class="flex items-center gap-1.5">
-            <Icon name="sun" size={13} class="text-[#8A8473]" />
-            UV index {weather.uvIndex}
-          </li>
-        {/if}
-      </ul>
+          {weather.precipChancePct !== null
+            ? `${weather.precipChancePct}% rain chance`
+            : "n/a"}
+        </div>
+      </div>
+      {#if weather.uvIndex !== null}
+        <p class="mt-1 flex items-center gap-1.5 text-xs text-[#33394A]">
+          <Icon name="sun" size={13} class="text-[#8A8473]" />
+          UV index {weather.uvIndex}
+        </p>
+      {/if}
     {:else}
-      <p class="mt-1 text-xs text-[#8A8473]">No coordinate data for this event.</p>
+      <p class="mt-1 text-xs text-[#8A8473]">
+        No coordinate data for this event.
+      </p>
     {/if}
   </div>
 
@@ -183,7 +206,7 @@
   }
 
   .severity-ring::after {
-    content: '';
+    content: "";
     position: absolute;
     inset: -2px;
     border-radius: 9999px;
@@ -203,4 +226,3 @@
     }
   }
 </style>
-

@@ -35,6 +35,7 @@ export type IconName =
   | 'sun'
   | 'pulse'
   | 'link'
+  | 'humidity'
 
 
 export const ICONS: Record<IconName, string> = {
@@ -136,4 +137,9 @@ export const ICONS: Record<IconName, string> = {
   chevronUp: `<path d="M6 14l6-6 6 6" />`,
   chevronDown: `<path d="M6 10l6 6 6-6" />`,
   skipForward: `<path d="M5 5v14l10-7Z" fill="currentColor" stroke="none" /><rect x="17" y="5" width="2.2" height="14" fill="currentColor" stroke="none" />`,
+
+  humidity: `
+  <path d="M12 3.3s5.8 6.8 5.8 10.7a5.8 5.8 0 1 1-11.6 0c0-3.9 5.8-10.7 5.8-10.7Z" />
+  <path d="M9.3 13.2a2.7 2.7 0 0 0 2.7 2.7" />
+`,
 }

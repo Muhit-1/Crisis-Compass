@@ -10,25 +10,48 @@
   import { eventsStore } from './lib/eventsStore.svelte'
   import { timelineStore } from './lib/timelineStore.svelte'
   import type { EonetEvent } from './types/eonet'
-  import { getCurrentWeather } from './lib/api/weather' // TEMP
+  import { getCurrentWeather } from './lib/api/weather'
 
   let activeCategories = $state<Set<string>>(new Set(Object.keys(CATEGORY_STYLES)))
   let selectedEvent = $state<EonetEvent | null>(null)
   let mapView: MapView
 
-  // TEMP: API connectivity check — delete this whole block (state + onMount snippet + header markup) when done
+  // Weather overlay toggle
+  let showWeatherOnMap = $state(false)
+
+  function toggleWeatherOnMap() {
+    showWeatherOnMap = !showWeatherOnMap
+  }
+
+  // TEMP: API connectivity check — delete this whole block when done
   let weatherStatus = $state<'checking' | 'ok' | 'error'>('checking')
+
   const eonetStatus = $derived(
-    eventsStore.error ? 'error' : eventsStore.loading && eventsStore.events.length === 0 ? 'checking' : 'ok',
+    eventsStore.error
+      ? 'error'
+      : eventsStore.loading && eventsStore.events.length === 0
+        ? 'checking'
+        : 'ok',
   )
   // END TEMP
 
-
   const displayedEvents = $derived(
-    timelineStore.active ? timelineStore.eventsOnSelectedDay : eventsStore.events,
+    timelineStore.active
+      ? timelineStore.eventsOnSelectedDay
+      : eventsStore.events,
   )
-  const isLoading = $derived(timelineStore.active ? timelineStore.loading : eventsStore.loading)
-  const loadError = $derived(timelineStore.active ? timelineStore.error : eventsStore.error)
+
+  const isLoading = $derived(
+    timelineStore.active
+      ? timelineStore.loading
+      : eventsStore.loading,
+  )
+
+  const loadError = $derived(
+    timelineStore.active
+      ? timelineStore.error
+      : eventsStore.error,
+  )
 
   function retryLoad() {
     if (timelineStore.active) timelineStore.retry()
@@ -37,17 +60,18 @@
 
   function toggleCategory(id: string) {
     const next = new Set(activeCategories)
+
     if (next.has(id)) {
       next.delete(id)
     } else {
       next.add(id)
     }
+
     activeCategories = next
   }
 
   function jumpToEvent(event: EonetEvent) {
-    // Jumping from the live ticker should always land on the live map, even
-    // if the user had been scrubbing the timeline.
+    // Jumping from the live ticker should always land on the live map
     timelineStore.resetToLive()
     selectedEvent = event
     mapView?.flyTo(event)
@@ -55,7 +79,8 @@
 
   onMount(() => {
     eventsStore.startAutoRefresh()
-      // TEMP: remove this block
+
+    // TEMP: remove this block
     getCurrentWeather(20, 0)
       .then(() => (weatherStatus = 'ok'))
       .catch(() => (weatherStatus = 'error'))
@@ -67,8 +92,6 @@
   })
 </script>
 
-
-
 <div class="flex h-screen w-screen flex-col bg-[#FAF6EC]">
   <header
     class="flex items-center justify-between border-b border-[#E8E0CC] bg-[#FFFDF8] px-4 py-2"
@@ -78,7 +101,7 @@
       Crisis Compass
     </h1>
 
-<!-- TEMP: API connection status — delete this div when done -->
+    <!-- TEMP: API connection status — delete this div when done -->
     <div class="flex items-center gap-2 text-[11px] font-medium">
       <span
         class={`rounded-full px-2 py-0.5 ${
@@ -89,8 +112,14 @@
               : 'bg-[#E0A458]/20 text-[#8a662f]'
         }`}
       >
-        EONET {eonetStatus === 'ok' ? '✓ connected' : eonetStatus === 'error' ? '✗ failed' : '… checking'}
+        EONET
+        {eonetStatus === 'ok'
+          ? ' ✓ connected'
+          : eonetStatus === 'error'
+            ? ' ✗ failed'
+            : ' … checking'}
       </span>
+
       <span
         class={`rounded-full px-2 py-0.5 ${
           weatherStatus === 'ok'
@@ -100,19 +129,30 @@
               : 'bg-[#E0A458]/20 text-[#8a662f]'
         }`}
       >
-        Open-Meteo {weatherStatus === 'ok' ? '✓ connected' : weatherStatus === 'error' ? '✗ failed' : '… checking'}
+        Open-Meteo
+        {weatherStatus === 'ok'
+          ? ' ✓ connected'
+          : weatherStatus === 'error'
+            ? ' ✗ failed'
+            : ' … checking'}
       </span>
     </div>
     <!-- END TEMP -->
 
-
-    <span class="text-xs text-[#8A8473]">Live natural events — NASA EONET</span>
+    <span class="text-xs text-[#8A8473]">
+      Live natural events — NASA EONET
+    </span>
   </header>
 
   <LiveBar onJumpToEvent={jumpToEvent} />
 
   <div class="flex flex-1 overflow-hidden">
-    <FilterSidebar active={activeCategories} onToggle={toggleCategory} />
+    <FilterSidebar
+      active={activeCategories}
+      onToggle={toggleCategory}
+      {showWeatherOnMap}
+      onToggleWeatherOnMap={toggleWeatherOnMap}
+    />
 
     <main class="relative flex-1">
       <MapView
@@ -123,10 +163,14 @@
         loading={isLoading}
         error={loadError}
         onRetry={retryLoad}
+        {showWeatherOnMap}
       />
 
       {#if selectedEvent}
-        <EventPanel event={selectedEvent} onClose={() => (selectedEvent = null)} />
+        <EventPanel
+          event={selectedEvent}
+          onClose={() => (selectedEvent = null)}
+        />
       {/if}
     </main>
   </div>
