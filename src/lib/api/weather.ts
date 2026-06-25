@@ -17,20 +17,49 @@ export interface GetWeatherOptions {
 }
 
 /**
- * Get precipitation probability for the current hour
+ * Find the hourly array index matching the current observation hour.
+ */
+function hourlyIndexFor(data: OpenMeteoForecastResponse): number {
+  const hourly = data.hourly
+  if (!hourly?.time?.length) return -1
+
+  const targetHour = data.current.time.slice(0, 13) // YYYY-MM-DDTHH
+  return hourly.time.findIndex((t) => t.slice(0, 13) === targetHour)
+}
+
+/**
+ * Get precipitation probability for the current hour.
  */
 function precipChanceFor(data: OpenMeteoForecastResponse): number | null {
   const hourly = data.hourly
-  if (!hourly?.time?.length) return null
 
-  const targetHour = data.current.time.slice(0, 13) // "YYYY-MM-DDTHH"
-  const idx = hourly.time.findIndex((t) => t.slice(0, 13) === targetHour)
+  if (!hourly?.precipitation_probability?.length) {
+    return null
+  }
+
+  const idx = hourlyIndexFor(data)
 
   return (
     (idx >= 0
       ? hourly.precipitation_probability[idx]
       : hourly.precipitation_probability[0]) ?? null
   )
+}
+
+/**
+ * Get UV index for the current hour.
+ * Open-Meteo exposes uv_index in hourly data, not current data.
+ */
+function uvIndexFor(data: OpenMeteoForecastResponse): number | null {
+  const hourly = data.hourly
+
+  if (!hourly?.uv_index?.length) {
+    return null
+  }
+
+  const idx = hourlyIndexFor(data)
+
+  return (idx >= 0 ? hourly.uv_index[idx] : hourly.uv_index[0]) ?? null
 }
 
 /**
@@ -45,18 +74,21 @@ export async function getCurrentWeather(
 
   const key = cacheKey(lat, lng)
   const cached = cache.get(key)
+
   if (cached && cached.expires > Date.now()) {
     return cached.data
   }
 
-  // ✅ UPDATED REQUEST PARAMS
+  // IMPORTANT:
+  // uv_index is NOT a valid Open-Meteo "current" variable.
+  // It must be requested under "hourly".
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lng),
     timezone: 'auto',
     current:
-      'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,uv_index',
-    hourly: 'precipitation_probability',
+      'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation',
+    hourly: 'precipitation_probability,uv_index',
     forecast_days: '1',
   })
 
@@ -74,7 +106,6 @@ export async function getCurrentWeather(
 
     const data = (await res.json()) as OpenMeteoForecastResponse
 
-    // ✅ UPDATED SNAPSHOT (your new structure)
     const snapshot: WeatherSnapshot = {
       temperatureC: data.current.temperature_2m,
       feelsLikeC: data.current.apparent_temperature,
@@ -82,19 +113,27 @@ export async function getCurrentWeather(
       windSpeedKph: data.current.wind_speed_10m,
       precipitationMm: data.current.precipitation,
       precipChancePct: precipChanceFor(data),
-      uvIndex: data.current.uv_index ?? null,
+      uvIndex: uvIndexFor(data),
       observedAt: data.current.time,
     }
 
-    cache.set(key, { expires: Date.now() + CACHE_TTL_MS, data: snapshot })
+    cache.set(key, {
+      expires: Date.now() + CACHE_TTL_MS,
+      data: snapshot,
+    })
+
     return snapshot
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error(`Weather request timed out after ${Math.round(timeoutMs / 1000)}s.`)
+      throw new Error(
+        `Weather request timed out after ${Math.round(timeoutMs / 1000)}s.`,
+      )
     }
+
     if (err instanceof TypeError) {
       throw new Error('Network request to Open-Meteo failed.')
     }
+
     throw err
   } finally {
     clearTimeout(timeoutId)

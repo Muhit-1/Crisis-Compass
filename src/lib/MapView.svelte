@@ -11,6 +11,7 @@
   import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
   import { isPointGeometry } from "../types/eonet";
+  import { owmTileUrl, type WeatherLayerKey } from "./weatherLayers";
   import type { EonetEvent } from "../types/eonet";
   import { getCategoryStyle } from "./categoryStyles";
   import { ICONS } from "./icons";
@@ -34,6 +35,7 @@
     error?: string | null;
     onRetry?: () => void;
     showWeatherOnMap?: boolean;
+    worldWeatherLayer?: WeatherLayerKey | null;
   }
 
   let {
@@ -44,11 +46,14 @@
     error = null,
     onRetry,
     showWeatherOnMap = false,
+    worldWeatherLayer = null,
   }: Props = $props();
 
   let mapContainer: HTMLDivElement;
   let map: L.Map | null = null;
   let clusterGroup: L.MarkerClusterGroup | null = null;
+  let weatherTileLayer: L.TileLayer | null = null;
+  let weatherLayerError = $state<string | null>(null);
 
   let eventCount = $state(0);
 
@@ -134,9 +139,7 @@
         marker.on("tooltipopen", () => {
           getCurrentWeather(lat, lng)
             .then((w) =>
-              marker.setTooltipContent(
-                baseTooltipHtml + formatWeatherLine(w),
-              ),
+              marker.setTooltipContent(baseTooltipHtml + formatWeatherLine(w)),
             )
             .catch(() =>
               marker.setTooltipContent(
@@ -221,18 +224,35 @@
     showWeatherOnMap;
     renderMarkers();
   });
+
+  $effect(() => {
+    if (!map) return;
+
+    if (weatherTileLayer) {
+      map.removeLayer(weatherTileLayer);
+      weatherTileLayer = null;
+    }
+    weatherLayerError = null;
+
+    if (worldWeatherLayer) {
+      try {
+        const url = owmTileUrl(worldWeatherLayer);
+        weatherTileLayer = L.tileLayer(url, {
+          maxZoom: 18,
+          opacity: 0.55,
+          attribution: "Weather &copy; OpenWeatherMap",
+        });
+        weatherTileLayer.addTo(map);
+      } catch (err) {
+        weatherLayerError =
+          err instanceof Error ? err.message : "Couldn't load weather layer";
+      }
+    }
+  });
 </script>
 
 <div class="relative h-full w-full">
   <div bind:this={mapContainer} class="h-full w-full"></div>
-
-  {#if loading}
-    <div
-      class="absolute top-4 left-4 z-[1000] rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow"
-    >
-      Loading events…
-    </div>
-  {/if}
 
   {#if error}
     <div
@@ -252,6 +272,14 @@
     </div>
   {/if}
 
+  {#if weatherLayerError}
+    <div
+      class="absolute top-4 left-4 z-[1000] max-w-xs rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-xs text-[#C97064] shadow"
+    >
+      World weather layer: {weatherLayerError}
+    </div>
+  {/if}
+
   {#if !loading && !error}
     <div
       class="absolute top-4 left-4 z-[1000] rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow"
@@ -260,6 +288,7 @@
     </div>
   {/if}
 </div>
+```
 
 <style>
   :global(.eonet-marker__dot) {
@@ -297,4 +326,3 @@
     }
   }
 </style>
-```

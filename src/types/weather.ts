@@ -6,7 +6,6 @@ export interface OpenMeteoCurrentUnits {
   relative_humidity_2m: string
   wind_speed_10m: string
   precipitation: string
-  uv_index?: string
 }
 
 export interface OpenMeteoCurrent {
@@ -17,12 +16,12 @@ export interface OpenMeteoCurrent {
   relative_humidity_2m: number
   wind_speed_10m: number
   precipitation: number
-  uv_index?: number
 }
 
 export interface OpenMeteoHourly {
   time: string[]
   precipitation_probability: number[]
+  uv_index: number[]
 }
 
 export interface OpenMeteoForecastResponse {

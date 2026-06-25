@@ -11,6 +11,7 @@
   import { timelineStore } from './lib/timelineStore.svelte'
   import type { EonetEvent } from './types/eonet'
   import { getCurrentWeather } from './lib/api/weather'
+  import type { WeatherLayerKey } from './lib/weatherLayers'
 
   let activeCategories = $state<Set<string>>(new Set(Object.keys(CATEGORY_STYLES)))
   let selectedEvent = $state<EonetEvent | null>(null)
@@ -18,6 +19,9 @@
 
   // Weather overlay toggle
   let showWeatherOnMap = $state(false)
+
+  // Selected world weather layer
+  let worldWeatherLayer = $state<WeatherLayerKey | null>('temp_new')
 
   function toggleWeatherOnMap() {
     showWeatherOnMap = !showWeatherOnMap
@@ -152,6 +156,8 @@
       onToggle={toggleCategory}
       {showWeatherOnMap}
       onToggleWeatherOnMap={toggleWeatherOnMap}
+      {worldWeatherLayer}
+      onSetWorldWeatherLayer={(key) => (worldWeatherLayer = key)}
     />
 
     <main class="relative flex-1">
@@ -164,6 +170,7 @@
         error={loadError}
         onRetry={retryLoad}
         {showWeatherOnMap}
+        {worldWeatherLayer}
       />
 
       {#if selectedEvent}
