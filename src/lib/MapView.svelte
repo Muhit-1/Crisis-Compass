@@ -11,12 +11,19 @@
   import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
   import { isPointGeometry } from "../types/eonet";
-  import { owmTileUrl, type WeatherLayerKey } from "./weatherLayers";
+  import { haversineKm, NEARBY_RADIUS_KM, type UserLocation } from "./geo";
+
   import type { EonetEvent } from "../types/eonet";
   import { getCategoryStyle } from "./categoryStyles";
   import { ICONS } from "./icons";
   import { getCurrentWeather } from "./api/weather";
   import type { WeatherSnapshot } from "../types/weather";
+
+  import {
+    owmTileUrl,
+    checkOwmKey,
+    type WeatherLayerKey,
+  } from "./weatherLayers";
 
   // Fix Leaflet default icon issue (Vite)
   // @ts-expect-error
@@ -36,8 +43,8 @@
     onRetry?: () => void;
     showWeatherOnMap?: boolean;
     worldWeatherLayer?: WeatherLayerKey | null;
+    userLocation?: UserLocation | null;
   }
-
   let {
     events,
     activeCategories,
@@ -47,6 +54,7 @@
     onRetry,
     showWeatherOnMap = false,
     worldWeatherLayer = null,
+    userLocation = null,
   }: Props = $props();
 
   let mapContainer: HTMLDivElement;
@@ -54,6 +62,7 @@
   let clusterGroup: L.MarkerClusterGroup | null = null;
   let weatherTileLayer: L.TileLayer | null = null;
   let weatherLayerError = $state<string | null>(null);
+  let nearMeCircle: L.Circle | null = null;
 
   let eventCount = $state(0);
 
@@ -117,7 +126,16 @@
       if (!latestGeometry || !isPointGeometry(latestGeometry)) continue;
 
       const [lng, lat] = latestGeometry.coordinates;
-      const marker = L.marker([lat, lng], { icon: iconFor(event) });
+
+      const inRange =
+        !userLocation ||
+        haversineKm(userLocation.lat, userLocation.lng, lat, lng) <=
+          NEARBY_RADIUS_KM;
+
+      const marker = L.marker([lat, lng], {
+        icon: iconFor(event),
+        opacity: inRange ? 1 : 0.25,
+      });
 
       const style = getCategoryStyle(event.categories[0]?.id ?? "");
       const categoryNames = event.categories.map((c) => c.title).join(", ");
@@ -167,9 +185,15 @@
     if (!latestGeometry || !isPointGeometry(latestGeometry)) return;
 
     const [lng, lat] = latestGeometry.coordinates;
+
     map.flyTo([lat, lng], Math.max(map.getZoom(), 4), {
       duration: 1,
     });
+  }
+
+  export function flyToLocation(lat: number, lng: number, zoom: number): void {
+    if (!map) return;
+    map.flyTo([lat, lng], zoom, { duration: 1 });
   }
 
   onMount(() => {
@@ -222,6 +246,7 @@
     events;
     activeCategories;
     showWeatherOnMap;
+    userLocation;
     renderMarkers();
   });
 
@@ -234,19 +259,47 @@
     }
     weatherLayerError = null;
 
-    if (worldWeatherLayer) {
-      try {
-        const url = owmTileUrl(worldWeatherLayer);
-        weatherTileLayer = L.tileLayer(url, {
+    const layer = worldWeatherLayer;
+    if (!layer) return;
+
+    let cancelled = false;
+
+    checkOwmKey()
+      .then(() => {
+        if (cancelled || !map || worldWeatherLayer !== layer) return;
+        weatherTileLayer = L.tileLayer(owmTileUrl(layer), {
           maxZoom: 18,
           opacity: 0.55,
           attribution: "Weather &copy; OpenWeatherMap",
         });
         weatherTileLayer.addTo(map);
-      } catch (err) {
+      })
+      .catch((err) => {
+        if (cancelled) return;
         weatherLayerError =
           err instanceof Error ? err.message : "Couldn't load weather layer";
-      }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  });
+  $effect(() => {
+    if (!map) return;
+
+    if (nearMeCircle) {
+      map.removeLayer(nearMeCircle);
+      nearMeCircle = null;
+    }
+
+    if (userLocation) {
+      nearMeCircle = L.circle([userLocation.lat, userLocation.lng], {
+        radius: NEARBY_RADIUS_KM * 1000,
+        color: "#7FA8C9",
+        weight: 1.5,
+        fillColor: "#7FA8C9",
+        fillOpacity: 0.06,
+      }).addTo(map);
     }
   });
 </script>
@@ -254,39 +307,41 @@
 <div class="relative h-full w-full">
   <div bind:this={mapContainer} class="h-full w-full"></div>
 
-  {#if error}
-    <div
-      class="absolute top-4 left-4 z-[1000] flex max-w-xs flex-col gap-2 rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#C97064] shadow"
-    >
-      <span>Couldn't load events: {error}</span>
+  <div class="absolute top-4 left-4 z-[1000] flex flex-col items-start gap-2">
+    {#if error}
+      <div
+        class="flex max-w-xs flex-col gap-2 rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#C97064] shadow"
+      >
+        <span>Couldn't load events: {error}</span>
 
-      {#if onRetry}
-        <button
-          type="button"
-          onclick={onRetry}
-          class="self-start rounded border border-[#C97064] px-2 py-1 text-xs font-medium text-[#C97064] hover:bg-[#C97064] hover:text-white"
-        >
-          Retry
-        </button>
-      {/if}
-    </div>
-  {/if}
+        {#if onRetry}
+          <button
+            type="button"
+            onclick={onRetry}
+            class="self-start rounded border border-[#C97064] px-2 py-1 text-xs font-medium text-[#C97064] hover:bg-[#C97064] hover:text-white"
+          >
+            Retry
+          </button>
+        {/if}
+      </div>
+    {/if}
 
-  {#if weatherLayerError}
-    <div
-      class="absolute top-4 left-4 z-[1000] max-w-xs rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-xs text-[#C97064] shadow"
-    >
-      World weather layer: {weatherLayerError}
-    </div>
-  {/if}
+    {#if weatherLayerError}
+      <div
+        class="max-w-xs rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-xs text-[#C97064] shadow"
+      >
+        World weather layer: {weatherLayerError}
+      </div>
+    {/if}
 
-  {#if !loading && !error}
-    <div
-      class="absolute top-4 left-4 z-[1000] rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow"
-    >
-      {eventCount} event{eventCount === 1 ? "" : "s"} shown
-    </div>
-  {/if}
+    {#if !loading && !error}
+      <div
+        class="rounded-md bg-[#FFFDF8]/95 px-3 py-2 text-sm text-[#33394A] shadow"
+      >
+        {eventCount} event{eventCount === 1 ? "" : "s"} shown
+      </div>
+    {/if}
+  </div>
 </div>
 ```
 
