@@ -36,6 +36,10 @@ export type IconName =
   | 'pulse'
   | 'link'
   | 'humidity'
+  | 'satellite'
+  | 'radar'
+  | 'pressure'
+  | 'cloudsLayer'
 
 
 export const ICONS: Record<IconName, string> = {
@@ -142,4 +146,27 @@ export const ICONS: Record<IconName, string> = {
   <path d="M12 3.3s5.8 6.8 5.8 10.7a5.8 5.8 0 1 1-11.6 0c0-3.9 5.8-10.7 5.8-10.7Z" />
   <path d="M9.3 13.2a2.7 2.7 0 0 0 2.7 2.7" />
 `,
+
+  satellite: `
+    <rect x="9" y="10" width="6" height="4" rx="0.6" />
+    <rect x="3.5" y="9" width="4" height="6" rx="0.5" transform="rotate(-25 5.5 12)" />
+    <rect x="16.5" y="9" width="4" height="6" rx="0.5" transform="rotate(25 18.5 12)" />
+    <path d="M12 10V6.5" />
+    <circle cx="12" cy="5.5" r="0.6" fill="currentColor" stroke="none" />
+  `,
+  radar: `
+    <path d="M4 20 18 6" />
+    <circle cx="4" cy="20" r="1" fill="currentColor" stroke="none" />
+    <path d="M7 20a3 3 0 0 0-3-3" />
+    <path d="M11 20a7 7 0 0 0-7-7" />
+    <path d="M15 20a11 11 0 0 0-11-11" />
+  `,
+  pressure: `
+    <circle cx="12" cy="13" r="7" />
+    <path d="M12 13 15 9.5" />
+    <path d="M9 7 8 5.5M15 7l1-1.5M12 5.5V4" />
+  `,
+  cloudsLayer: `
+    <path d="M7 17.5a3.6 3.6 0 0 1-.6-7.1 4.6 4.6 0 0 1 8.9-1.7 3.3 3.3 0 0 1 3.7 3.3 3.1 3.1 0 0 1-.6 5.5H7Z" />
+  `,
 }

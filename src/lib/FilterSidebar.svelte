@@ -2,6 +2,7 @@
   import { CATEGORY_STYLES } from './categoryStyles'
   import { WEATHER_LAYER_OPTIONS, type WeatherLayerKey } from './weatherLayers'
   import Icon from './Icon.svelte'
+  import type { IconName } from './icons'
 
   interface Props {
     active: Set<string>
@@ -26,8 +27,8 @@
   )
 
   let categoriesOpen = $state(true)
+  let weatherMapsOpen = $state(true)
   let tooltipWeatherOpen = $state(true)
-  let worldWeatherOpen = $state(true)
 
   const allActive = $derived(categories.every((c) => active.has(c.id)))
   const noneActive = $derived(categories.every((c) => !active.has(c.id)))
@@ -39,12 +40,37 @@
     for (const c of categories) if (active.has(c.id)) onToggle(c.id)
   }
 
-  function toggleWorldWeather() {
-    onSetWorldWeatherLayer(worldWeatherLayer ? null : 'temp_new')
+  /** Clicking the already-active layer turns the overlay off — single-select with toggle-off. */
+  function selectWeatherLayer(key: WeatherLayerKey) {
+    onSetWorldWeatherLayer(worldWeatherLayer === key ? null : key)
   }
+
+  const LAYER_ICON: Record<WeatherLayerKey, IconName> = {
+    temp_new: 'thermometer',
+    clouds_new: 'cloudsLayer',
+    precipitation_new: 'rain',
+    wind_new: 'wind',
+  }
+
+  // Rows shown for visual parity with reference weather sites (Zoom.earth-style
+  // layer picker) but not yet backed by a free data source in this app. Kept
+  // visible-but-disabled rather than hidden, so the menu reads the same way
+  // at a glance and it's obvious these are "not wired up", not "missing".
+  interface PlaceholderLayer {
+    label: string
+    iconName: IconName
+  }
+  const TOP_PLACEHOLDERS: PlaceholderLayer[] = [
+    { label: 'Satellite', iconName: 'satellite' },
+    { label: 'Radar', iconName: 'radar' },
+  ]
+  const BOTTOM_PLACEHOLDERS: PlaceholderLayer[] = [
+    { label: 'Humidity', iconName: 'humidity' },
+    { label: 'Pressure', iconName: 'pressure' },
+  ]
 </script>
 
-<nav class="flex w-52 shrink-0 flex-col gap-3 overflow-y-auto border-r border-[#E8E0CC] bg-[#FFFDF8] p-3">
+<nav class="flex w-56 shrink-0 flex-col gap-3 overflow-y-auto border-r border-[#E8E0CC] bg-[#FFFDF8] p-3">
   <section>
     <div class="flex items-center justify-between">
       <button
@@ -69,7 +95,13 @@
     {#if categoriesOpen}
       <div class="mt-1.5 flex flex-col gap-0.5">
         {#each categories as category (category.id)}
-          <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-[#33394A] hover:bg-[#FAF6EC]">
+          <label
+            class={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors ${
+              active.has(category.id)
+                ? 'bg-[#FAF6EC] text-[#33394A]'
+                : 'text-[#8A8473] hover:bg-[#FAF6EC]'
+            }`}
+          >
             <input
               type="checkbox"
               checked={active.has(category.id)}
@@ -84,48 +116,58 @@
     {/if}
   </section>
 
-  <!-- World weather map overlay (OpenWeatherMap raster tiles, whole-globe) -->
+  <!-- Weather maps — styled after Zoom.earth's left-hand layer picker:
+       a flat list of layers, icon-led, single active selection highlighted. -->
   <section class="border-t border-[#E8E0CC] pt-3">
     <button
       type="button"
-      onclick={() => (worldWeatherOpen = !worldWeatherOpen)}
+      onclick={() => (weatherMapsOpen = !weatherMapsOpen)}
       class="flex w-full items-center justify-between text-xs font-semibold tracking-wide text-[#8A8473] uppercase"
     >
-      World Weather Map
-      <Icon name={worldWeatherOpen ? 'chevronUp' : 'chevronDown'} size={12} />
+      Weather Maps
+      <Icon name={weatherMapsOpen ? 'chevronUp' : 'chevronDown'} size={12} />
     </button>
 
-    {#if worldWeatherOpen}
-      <label class="mt-1.5 flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-[#33394A] hover:bg-[#FAF6EC]">
-        <input
-          type="checkbox"
-          checked={worldWeatherLayer !== null}
-          onchange={toggleWorldWeather}
-          class="accent-[#33394A]"
-        />
-        <Icon name="thermometer" size={15} class="text-[#8A8473]" />
-        <span>Show on map</span>
-      </label>
+    {#if weatherMapsOpen}
+      <div class="mt-1.5 flex flex-col gap-0.5">
+        {#each TOP_PLACEHOLDERS as layer (layer.label)}
+          <div
+            class="flex cursor-not-allowed items-center gap-2 rounded-md px-2 py-1 text-sm text-[#C9C2AC]"
+            title="Not available on the free tier yet"
+          >
+            <Icon name={layer.iconName} size={15} />
+            <span class="truncate">{layer.label}</span>
+          </div>
+        {/each}
 
-      {#if worldWeatherLayer !== null}
-        <div class="mt-1 flex flex-col gap-0.5 pl-2">
-          {#each WEATHER_LAYER_OPTIONS as option (option.key)}
-            <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-0.5 text-xs text-[#33394A] hover:bg-[#FAF6EC]">
-              <input
-                type="radio"
-                name="world-weather-layer"
-                checked={worldWeatherLayer === option.key}
-                onchange={() => onSetWorldWeatherLayer(option.key)}
-                class="accent-[#33394A]"
-              />
-              <span>{option.label}</span>
-            </label>
-          {/each}
-        </div>
-      {/if}
+        {#each WEATHER_LAYER_OPTIONS as option (option.key)}
+          <button
+            type="button"
+            onclick={() => selectWeatherLayer(option.key)}
+            class={`flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm transition-colors ${
+              worldWeatherLayer === option.key
+                ? 'bg-[#33394A] text-white'
+                : 'text-[#33394A] hover:bg-[#FAF6EC]'
+            }`}
+          >
+            <Icon name={LAYER_ICON[option.key]} size={15} />
+            <span class="truncate">{option.label}</span>
+          </button>
+        {/each}
 
-      <p class="mt-1 px-2 text-[10px] text-[#8A8473]">
-        Live global overlay from OpenWeatherMap — separate from the per-event weather below.
+        {#each BOTTOM_PLACEHOLDERS as layer (layer.label)}
+          <div
+            class="flex cursor-not-allowed items-center gap-2 rounded-md px-2 py-1 text-sm text-[#C9C2AC]"
+            title="Not available on the free tier yet"
+          >
+            <Icon name={layer.iconName} size={15} />
+            <span class="truncate">{layer.label}</span>
+          </div>
+        {/each}
+      </div>
+
+      <p class="mt-1.5 px-2 text-[10px] text-[#8A8473]">
+        Live global overlay from Open-Meteo (DWD ICON model) — separate from the per-event weather below.
       </p>
     {/if}
   </section>
@@ -142,7 +184,7 @@
     </button>
 
     {#if tooltipWeatherOpen}
-      <label class="mt-1.5 flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-[#33394A] hover:bg-[#FAF6EC]">
+      <label class="mt-1.5 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm text-[#33394A] hover:bg-[#FAF6EC]">
         <input
           type="checkbox"
           checked={showWeatherOnMap}

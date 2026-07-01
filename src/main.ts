@@ -1,5 +1,6 @@
 import { mount } from 'svelte'
 import './app.css'
+import 'maplibre-gl/dist/maplibre-gl.css'
 import App from './App.svelte'
 
 const app = mount(App, {

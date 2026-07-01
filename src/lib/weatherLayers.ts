@@ -1,8 +1,12 @@
 /**
- * World weather raster tiles via OpenWeatherMap. Distinct from the Open-Meteo
- * point lookups used for per-event weather — this is a continuous map overlay,
- * which Open-Meteo doesn't offer in a plain-Leaflet-compatible tile format.
+ * World weather overlay — powered by Open-Meteo's spatial OM-file tiles.
+ *
+ * The OM protocol and MapLibre are loaded lazily inside async functions so
+ * that a package error never breaks the base map initialization.
+ *
+ * Package docs: https://github.com/open-meteo/weather-map-layer
  */
+
 export type WeatherLayerKey = 'temp_new' | 'clouds_new' | 'precipitation_new' | 'wind_new'
 
 export interface WeatherLayerOption {
@@ -17,46 +21,78 @@ export const WEATHER_LAYER_OPTIONS: WeatherLayerOption[] = [
   { key: 'wind_new', label: 'Wind' },
 ]
 
-const OWM_TILE_BASE = 'https://tile.openweathermap.org/map'
-
-function apiKeyOrThrow(): string {
-  const apiKey = import.meta.env.VITE_OPENWEATHERMAP_API_KEY as string | undefined
-  if (!apiKey) {
-    throw new Error(
-      'Missing OpenWeatherMap API key. Add VITE_OPENWEATHERMAP_API_KEY to a .env file and restart the dev server.',
-    )
-  }
-  return apiKey
+/**
+ * DWD ICON spatial-tile variable names.
+ * wind_speed_10m is NOT in the spatial tiles — DWD stores wind as
+ * U (eastward) + V (northward) components. wind_u_component_10m gives a
+ * useful directional overlay for the single-layer picker we have.
+ */
+const VARIABLE_BY_LAYER: Record<WeatherLayerKey, string> = {
+  temp_new: 'temperature_2m',
+  clouds_new: 'cloud_cover',
+  precipitation_new: 'precipitation',
+  wind_new: 'wind_u_component_10m',
 }
 
-export function owmTileUrl(layer: WeatherLayerKey): string {
-  return `${OWM_TILE_BASE}/${layer}/{z}/{x}/{y}.png?appid=${apiKeyOrThrow()}`
+const MODEL = 'dwd_icon'
+const RUN_INDEX_URL = `https://map-tiles.open-meteo.com/data_spatial/${MODEL}/latest.json`
+
+let _protocolRegistered = false
+
+/**
+ * Registers the om:// protocol with MapLibre. Fully lazy — imports both
+ * maplibre-gl and @openmeteo/weather-map-layer only when first called.
+ * Safe to call multiple times (no-ops after first success).
+ */
+export async function ensureOmProtocolRegistered(): Promise<void> {
+  if (_protocolRegistered) return
+
+  // Dynamic imports so a package-level error never breaks MapView mounting
+  const [maplibreModule, omModule] = await Promise.all([
+    import('maplibre-gl'),
+    import('@openmeteo/weather-map-layer'),
+  ])
+
+  const maplibregl = maplibreModule.default
+  const { omProtocol } = omModule
+
+  maplibregl.addProtocol('om', omProtocol)
+  _protocolRegistered = true
+}
+
+/** om:// source URL for a given layer. Only call after ensureOmProtocolRegistered resolves. */
+export function omSourceUrl(layer: WeatherLayerKey): string {
+  const variable = VARIABLE_BY_LAYER[layer]
+  return `om://${RUN_INDEX_URL}?variable=${variable}`
 }
 
 /**
- * Tile layers fail silently in Leaflet — a bad key just renders a blank tile,
- * never an error event. So before trusting the layer, fetch one known tile
- * directly and translate the HTTP status into an actionable message. This
- * catches the #1 cause of "the overlay shows nothing": a fresh OpenWeatherMap
- * key that hasn't activated yet (can take up to ~2 hours after signup).
+ * Fetches the current model-run index and verifies the variable is available.
+ * Gives a clear, actionable error instead of a silently blank tile layer.
  */
-export async function checkOwmKey(): Promise<void> {
-  const apiKey = apiKeyOrThrow()
-  const probeUrl = `${OWM_TILE_BASE}/temp_new/2/2/1.png?appid=${apiKey}`
+export async function checkVariableAvailable(layer: WeatherLayerKey): Promise<void> {
+  const variable = VARIABLE_BY_LAYER[layer]
 
   let res: Response
   try {
-    res = await fetch(probeUrl)
+    res = await fetch(RUN_INDEX_URL)
   } catch {
-    throw new Error('Could not reach OpenWeatherMap — check your network connection.')
+    throw new Error('Could not reach Open-Meteo map tiles — check your network connection.')
   }
 
-  if (res.status === 401) {
-    throw new Error(
-      'OpenWeatherMap rejected the API key (401). New keys can take up to ~2 hours to activate — if you just created it, wait and refresh. Otherwise check VITE_OPENWEATHERMAP_API_KEY in .env and restart the dev server.',
-    )
-  }
   if (!res.ok) {
-    throw new Error(`OpenWeatherMap tile request failed: ${res.status} ${res.statusText}`)
+    throw new Error(`Open-Meteo map tile index failed: ${res.status} ${res.statusText}`)
+  }
+
+  const index = (await res.json()) as { variables?: string[] }
+  if (index.variables && !index.variables.includes(variable)) {
+    // For wind, show which wind variables are actually available
+    const hint =
+      layer === 'wind_new'
+        ? ` Available wind variables: ${index.variables.filter((v) => v.startsWith('wind')).join(', ')}.`
+        : ''
+    throw new Error(
+      `"${variable}" isn't in the current ${MODEL} run.${hint} See ${RUN_INDEX_URL}.`,
+    )
   }
 }

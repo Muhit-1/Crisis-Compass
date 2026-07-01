@@ -106,6 +106,7 @@ export async function getCurrentWeather(
 
     const data = (await res.json()) as OpenMeteoForecastResponse
 
+    // ✅ UPDATED SNAPSHOT (your new structure)
     const snapshot: WeatherSnapshot = {
       temperatureC: data.current.temperature_2m,
       feelsLikeC: data.current.apparent_temperature,

@@ -46,3 +46,41 @@ export function getCurrentPosition(): Promise<UserLocation> {
     )
   })
 }
+
+/**
+ * Builds a GeoJSON circle polygon (an N-sided approximation) around a center
+ * point — used to draw the "Near Me" radius ring on the MapLibre map.
+ * Hand-rolled rather than pulling in a turf dependency for one shape.
+ */
+export function circlePolygon(
+  center: UserLocation,
+  radiusKm: number,
+  steps = 64,
+): GeoJSON.Feature<GeoJSON.Polygon> {
+  const coords: [number, number][] = []
+  const centerLatRad = toRad(center.lat)
+  const angularDistance = radiusKm / EARTH_RADIUS_KM
+
+  for (let i = 0; i <= steps; i++) {
+    const bearing = (i / steps) * 2 * Math.PI
+
+    const lat2 = Math.asin(
+      Math.sin(centerLatRad) * Math.cos(angularDistance) +
+        Math.cos(centerLatRad) * Math.sin(angularDistance) * Math.cos(bearing),
+    )
+    const lng2 =
+      toRad(center.lng) +
+      Math.atan2(
+        Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(centerLatRad),
+        Math.cos(angularDistance) - Math.sin(centerLatRad) * Math.sin(lat2),
+      )
+
+    coords.push([(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI])
+  }
+
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Polygon', coordinates: [coords] },
+  }
+}
