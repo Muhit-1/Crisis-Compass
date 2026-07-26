@@ -15,10 +15,13 @@
   --color-panel-2: #1a2430;
   --color-edge: #26313d;
 
-  /* Text */
-  --color-ink: #e8eef4;
-  --color-muted: #8595a5;
-  --color-faint: #5b6874;
+  /* Text.
+     Every tier is held above WCAG AA against --color-panel. The previous
+     muted/faint pair sat at roughly 4.9:1 and 2.6:1 — the second of those was
+     effectively unreadable, which is what made the UI look like grey-on-black. */
+  --color-ink: #f4f8fb; /* ~15.8:1 */
+  --color-muted: #aebecd; /* ~8.9:1 — body copy, labels */
+  --color-faint: #8496a6; /* ~5.6:1 — the quietest text allowed */
 
   /* Interactive accent */
   --color-accent: #4fa8e0;
@@ -56,7 +59,9 @@
     /* Backdrop blur is recomputed every time the map underneath repaints, so
        the panel is kept mostly opaque and the filter cheap — a single blur
        pass, no saturate — rather than leaning on the blur for legibility. */
-    background-color: color-mix(in srgb, var(--color-panel) 90%, transparent);
+    /* Near-opaque: text legibility over a busy map matters more than seeing
+       the map through the panel. */
+    background-color: color-mix(in srgb, var(--color-panel) 95%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-edge) 70%, transparent);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);

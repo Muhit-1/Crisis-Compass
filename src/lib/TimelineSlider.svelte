@@ -85,16 +85,16 @@
 
 <div class="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex flex-col items-center gap-1.5">
   {#if store.runError}
-    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[11px] text-sev-high">
+    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[12px] text-sev-high">
       Weather model unavailable: {store.runError}
       <button type="button" class="ml-1 underline" onclick={() => store.retryRun()}>Retry</button>
     </p>
   {:else if store.isPast && store.loading}
-    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[11px] text-muted">
+    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[12px] text-muted">
       Loading {TIMELINE_WINDOW_DAYS}-day event history…
     </p>
   {:else if store.isPast && store.error}
-    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[11px] text-sev-high">
+    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[12px] text-sev-high">
       Couldn't load history: {store.error}
       <button type="button" class="ml-1 underline" onclick={() => store.retry()}>Retry</button>
     </p>
@@ -127,7 +127,7 @@
         <button
           type="button"
           onclick={() => store.step(-1)}
-          class="rounded px-1 py-1 text-[10px] font-semibold transition-colors hover:text-ink"
+          class="rounded px-1 py-1 text-[12px] font-semibold transition-colors hover:text-ink"
           aria-label="Back one hour"
           title="Back one hour"
         >
@@ -136,7 +136,7 @@
         <button
           type="button"
           onclick={() => store.step(1)}
-          class="rounded px-1 py-1 text-[10px] font-semibold transition-colors hover:text-ink"
+          class="rounded px-1 py-1 text-[12px] font-semibold transition-colors hover:text-ink"
           aria-label="Forward one hour"
           title="Forward one hour"
         >
@@ -168,7 +168,7 @@
             style={`left:${pct(tick.offset)}%`}
           ></div>
           <span
-            class="pointer-events-none absolute top-[17px] -translate-x-1/2 text-[9px] whitespace-nowrap text-faint"
+            class="pointer-events-none absolute top-[17px] -translate-x-1/2 text-[11px] whitespace-nowrap text-faint"
             style={`left:${pct(tick.offset)}%`}
           >
             {tick.label}
@@ -196,9 +196,9 @@
       </div>
 
       <div class="shrink-0 text-right">
-        <div class="text-xs font-medium whitespace-nowrap tabular-nums">{absoluteLabel}</div>
+        <div class="text-[13px] font-medium whitespace-nowrap tabular-nums">{absoluteLabel}</div>
         <div
-          class={`text-[10px] tabular-nums ${store.isLive ? 'text-accent' : 'text-muted'}`}
+          class={`text-[12px] tabular-nums ${store.isLive ? 'text-accent' : 'text-muted'}`}
         >
           {relativeLabel}
           {#if store.isForecast}<span class="text-faint"> · forecast</span>{/if}
@@ -209,7 +209,7 @@
         type="button"
         onclick={() => store.resetToLive()}
         disabled={store.isLive}
-        class="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors disabled:opacity-40 enabled:hover:bg-accent/20 enabled:hover:text-accent"
+        class="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40 enabled:hover:bg-accent/20 enabled:hover:text-accent"
         aria-label="Jump to now"
         title="Jump to now"
       >

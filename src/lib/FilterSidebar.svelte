@@ -13,6 +13,16 @@
     onSetWorldWeatherLayer: (key: WeatherLayerKey | null) => void
     showIsobars: boolean
     onToggleIsobars: () => void
+    showQuakes: boolean
+    onToggleQuakes: () => void
+    showAlerts: boolean
+    onToggleAlerts: () => void
+    quakeCount: number
+    alertCount: number
+    quakeError: string | null
+    alertError: string | null
+    quakesLoading: boolean
+    alertsLoading: boolean
   }
 
   let {
@@ -24,7 +34,29 @@
     onSetWorldWeatherLayer,
     showIsobars,
     onToggleIsobars,
+    showQuakes,
+    onToggleQuakes,
+    showAlerts,
+    onToggleAlerts,
+    quakeCount,
+    alertCount,
+    quakeError,
+    alertError,
+    quakesLoading,
+    alertsLoading,
   }: Props = $props()
+
+  /** Right-hand hint on a feed row: count, spinner text, or nothing. */
+  function feedBadge(
+    on: boolean,
+    loading: boolean,
+    count: number,
+    fallback: string,
+  ): string {
+    if (!on) return fallback
+    if (loading) return '…'
+    return count ? String(count) : fallback
+  }
 
   const categories = Object.values(CATEGORY_STYLES).sort((a, b) =>
     a.title.localeCompare(b.title),
@@ -85,13 +117,41 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="absolute top-1/2 right-3 z-30 flex -translate-y-1/2 items-start gap-2">
+<!--
+  Pinned left, with the flyout opening rightward. The event and forecast panels
+  own the top-right corner, so a right-hand rail put the two on top of each
+  other the moment you opened a layer.
+-->
+<div class="absolute top-1/2 left-3 z-30 flex -translate-y-1/2 items-start gap-2">
+  <!-- Icon rail -->
+  <nav class="glass flex flex-col gap-1 rounded-2xl p-1.5">
+    {#each RAIL as item (item.id)}
+      <button
+        type="button"
+        onclick={() => toggleSection(item.id)}
+        aria-label={item.label}
+        aria-pressed={openSection === item.id}
+        title={item.label}
+        class={`relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
+          openSection === item.id
+            ? 'bg-accent/20 text-accent'
+            : 'text-muted hover:bg-panel-2 hover:text-ink'
+        }`}
+      >
+        <Icon name={item.icon} size={17} />
+        {#if item.id === 'layers' && worldWeatherLayer}
+          <span class="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-accent"></span>
+        {/if}
+      </button>
+    {/each}
+  </nav>
+
   {#if openSection}
     <div
       class="glass flex max-h-[70vh] w-60 flex-col overflow-hidden rounded-2xl"
     >
       <div class="flex items-center justify-between px-3 pt-2.5 pb-1.5">
-        <h2 class="text-[11px] font-semibold tracking-wider text-muted uppercase">
+        <h2 class="text-[12px] font-semibold tracking-wider text-muted uppercase">
           {RAIL.find((r) => r.id === openSection)?.label}
         </h2>
         <button
@@ -124,7 +184,7 @@
             >
               <Icon name="layers" size={15} />
               <span class="min-w-0 flex-1 truncate">Simple</span>
-              <span class="shrink-0 text-[9px] text-faint">Political map</span>
+              <span class="shrink-0 text-[11px] text-faint">Political map</span>
             </button>
 
             <div class="my-1 h-px bg-edge/60"></div>
@@ -142,7 +202,7 @@
                 <Icon name={option.iconName} size={15} />
                 <span class="min-w-0 flex-1 truncate">{option.label}</span>
                 {#if option.hint}
-                  <span class="shrink-0 text-[9px] text-faint">{option.hint}</span>
+                  <span class="shrink-0 text-[11px] text-faint">{option.hint}</span>
                 {/if}
               </button>
             {/each}
@@ -160,7 +220,7 @@
               />
               <Icon name="pressure" size={15} class="text-muted" />
               <span class="min-w-0 flex-1 truncate">Pressure isobars</span>
-              <span class="shrink-0 text-[9px] text-faint">4 hPa</span>
+              <span class="shrink-0 text-[11px] text-faint">4 hPa</span>
             </label>
 
             {#each PLACEHOLDERS as layer (layer.label)}
@@ -174,16 +234,66 @@
             {/each}
           </div>
 
-          <p class="mt-2 px-2 text-[10px] leading-relaxed text-faint">
+          <p class="mt-2 px-2 text-[12px] leading-relaxed text-faint">
             Weather from Open-Meteo (DWD ICON). Any layer switches the base map to
             the dark one so the data stays readable.
           </p>
         {:else if openSection === 'categories'}
+          <!-- Independent hazard feeds, above the EONET category filter. -->
+          <p class="mb-1 px-2 text-[12px] font-semibold tracking-wider text-faint uppercase">
+            Live feeds
+          </p>
+          <div class="mb-2 flex flex-col gap-0.5">
+            <label
+              class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-ink transition-colors hover:bg-panel-2"
+            >
+              <input
+                type="checkbox"
+                checked={showQuakes}
+                onchange={onToggleQuakes}
+                class="h-3.5 w-3.5 accent-accent"
+              />
+              <Icon name="earthquakes" size={15} class="text-muted" />
+              <span class="min-w-0 flex-1 truncate">Earthquakes</span>
+              <span class="shrink-0 text-[11px] text-faint tabular-nums">
+                {feedBadge(showQuakes, quakesLoading, quakeCount, 'USGS')}
+              </span>
+            </label>
+            {#if showQuakes && quakeError}
+              <p class="px-2 pb-1 text-[12px] leading-snug text-sev-high">{quakeError}</p>
+            {/if}
+
+            <label
+              class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-ink transition-colors hover:bg-panel-2"
+            >
+              <input
+                type="checkbox"
+                checked={showAlerts}
+                onchange={onToggleAlerts}
+                class="h-3.5 w-3.5 accent-accent"
+              />
+              <Icon name="pulse" size={15} class="text-muted" />
+              <span class="min-w-0 flex-1 truncate">Disaster alerts</span>
+              <span class="shrink-0 text-[11px] text-faint tabular-nums">
+                {feedBadge(showAlerts, alertsLoading, alertCount, 'GDACS')}
+              </span>
+            </label>
+            {#if showAlerts && alertError}
+              <p class="px-2 pb-1 text-[12px] leading-snug text-sev-high">{alertError}</p>
+            {/if}
+          </div>
+
+          <div class="mb-1.5 border-t border-edge/60 pt-2"></div>
+
+          <p class="mb-1 px-2 text-[12px] font-semibold tracking-wider text-faint uppercase">
+            NASA EONET
+          </p>
+
           <div class="mb-1.5 flex items-center justify-between px-2">
-            <span class="text-[10px] text-faint tabular-nums">
+            <span class="text-[12px] text-faint tabular-nums">
               {activeCount}/{categories.length} shown
             </span>
-            <div class="flex items-center gap-1.5 text-[10px] font-medium text-muted">
+            <div class="flex items-center gap-1.5 text-[12px] font-medium text-muted">
               <button
                 type="button"
                 onclick={selectAll}
@@ -239,34 +349,11 @@
             <Icon name="thermometer" size={15} class="text-muted" />
             <span>Weather on hover</span>
           </label>
-          <p class="mt-1 px-2 text-[10px] leading-relaxed text-faint">
+          <p class="mt-1 px-2 text-[12px] leading-relaxed text-faint">
             Adds live conditions to each marker's tooltip. Off by default to limit API calls.
           </p>
         {/if}
       </div>
     </div>
   {/if}
-
-  <!-- Icon rail -->
-  <nav class="glass flex flex-col gap-1 rounded-2xl p-1.5">
-    {#each RAIL as item (item.id)}
-      <button
-        type="button"
-        onclick={() => toggleSection(item.id)}
-        aria-label={item.label}
-        aria-pressed={openSection === item.id}
-        title={item.label}
-        class={`relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
-          openSection === item.id
-            ? 'bg-accent/20 text-accent'
-            : 'text-muted hover:bg-panel-2 hover:text-ink'
-        }`}
-      >
-        <Icon name={item.icon} size={17} />
-        {#if item.id === 'layers' && worldWeatherLayer}
-          <span class="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-accent"></span>
-        {/if}
-      </button>
-    {/each}
-  </nav>
 </div>

@@ -1,4 +1,10 @@
-import type { OpenMeteoForecastResponse, WeatherSnapshot } from '../../types/weather'
+import type {
+  ForecastHour,
+  OpenMeteoForecastResponse,
+  OpenMeteoPointResponse,
+  PointForecast,
+  WeatherSnapshot,
+} from '../../types/weather'
 
 const OPEN_METEO_BASE_URL = 'https://api.open-meteo.com/v1/forecast'
 
@@ -135,6 +141,118 @@ export async function getCurrentWeather(
       throw new Error('Network request to Open-Meteo failed.')
     }
 
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+// ---------------------------------------------------------------------------
+// Point forecast (meteogram)
+// ---------------------------------------------------------------------------
+
+/**
+ * Days of history and forecast requested for the click-anywhere meteogram.
+ * Chosen to span the master clock's window so the selected-time marker always
+ * lands somewhere on the chart. The whole response is ~18 kB.
+ */
+const POINT_PAST_DAYS = 7
+const POINT_FORECAST_DAYS = 7
+
+const POINT_HOURLY_VARS = [
+  'temperature_2m',
+  'apparent_temperature',
+  'precipitation',
+  'precipitation_probability',
+  'wind_speed_10m',
+  'wind_direction_10m',
+  'cloud_cover',
+  'weather_code',
+].join(',')
+
+const pointCache = new Map<string, { expires: number; data: PointForecast }>()
+
+/**
+ * Hourly forecast for an arbitrary coordinate.
+ *
+ * Requested with `timezone=auto` so the labels read as local wall-clock time at
+ * the location, which is what someone reading a meteogram wants. That means
+ * `hourly.time` comes back WITHOUT a zone suffix — parsing it directly would
+ * silently reinterpret it in the browser's timezone. Absolute instants are
+ * reconstructed from the returned UTC offset instead.
+ */
+export async function getPointForecast(
+  lat: number,
+  lng: number,
+  options: GetWeatherOptions = {},
+): Promise<PointForecast> {
+  const { timeoutMs = 15000 } = options
+
+  const key = `${lat.toFixed(2)},${lng.toFixed(2)}`
+  const cached = pointCache.get(key)
+  if (cached && cached.expires > Date.now()) return cached.data
+
+  const params = new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lng),
+    timezone: 'auto',
+    past_days: String(POINT_PAST_DAYS),
+    forecast_days: String(POINT_FORECAST_DAYS),
+    hourly: POINT_HOURLY_VARS,
+  })
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const res = await fetch(`${OPEN_METEO_BASE_URL}?${params.toString()}`, {
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      throw new Error(`Open-Meteo request failed: ${res.status} ${res.statusText}`)
+    }
+
+    const data = (await res.json()) as OpenMeteoPointResponse
+    const h = data.hourly
+    const offsetMs = data.utc_offset_seconds * 1000
+
+    const hours: ForecastHour[] = h.time.map((localIso, i) => ({
+      // Treat the local string as UTC, then undo the offset to get the real instant.
+      at: new Date(Date.parse(`${localIso}Z`) - offsetMs),
+      localIso,
+      temperatureC: h.temperature_2m[i],
+      feelsLikeC: h.apparent_temperature[i],
+      precipitationMm: h.precipitation[i] ?? 0,
+      precipChancePct: h.precipitation_probability?.[i] ?? null,
+      windSpeedKph: h.wind_speed_10m[i],
+      windDirectionDeg: h.wind_direction_10m[i],
+      cloudCoverPct: h.cloud_cover[i],
+      weatherCode: h.weather_code[i],
+    }))
+
+    const forecast: PointForecast = {
+      latitude: data.latitude,
+      longitude: data.longitude,
+      elevationM: data.elevation,
+      timezone: data.timezone,
+      utcOffsetSeconds: data.utc_offset_seconds,
+      hours,
+      units: {
+        temperature: data.hourly_units?.temperature_2m ?? '°C',
+        precipitation: data.hourly_units?.precipitation ?? 'mm',
+        wind: data.hourly_units?.wind_speed_10m ?? 'km/h',
+      },
+    }
+
+    pointCache.set(key, { expires: Date.now() + CACHE_TTL_MS, data: forecast })
+    return forecast
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(`Forecast request timed out after ${Math.round(timeoutMs / 1000)}s.`)
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Network request to Open-Meteo failed.')
+    }
     throw err
   } finally {
     clearTimeout(timeoutId)

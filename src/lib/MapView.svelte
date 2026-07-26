@@ -13,6 +13,9 @@
   } from "./geo";
 
   import type { EonetEvent } from "../types/eonet";
+  import type { GdacsAlert, Quake } from "../types/hazards";
+  import { ALERT_COLORS } from "./hazardStyles";
+  import { relativeTime } from "./time";
   import { getCategoryStyle } from "./categoryStyles";
   import { SEVERITY_COLORS } from "./severity";
   import { ICONS, type IconName } from "./icons";
@@ -69,6 +72,14 @@
     basemap?: BasemapKey;
     /** Mean sea-level pressure isolines, independent of the colour layer. */
     showIsobars?: boolean;
+    /** Fired when the user clicks bare map — opens the point forecast. */
+    onSelectPoint?: (point: { lat: number; lng: number }) => void;
+    /** Currently picked forecast point, marked on the map. */
+    forecastPoint?: { lat: number; lng: number } | null;
+    quakes?: Quake[];
+    alerts?: GdacsAlert[];
+    onSelectQuake?: (quake: Quake) => void;
+    onSelectAlert?: (alert: GdacsAlert) => void;
   }
   let {
     events,
@@ -84,6 +95,12 @@
     runIndex = null,
     basemap = "simple",
     showIsobars = false,
+    onSelectPoint,
+    forecastPoint = null,
+    quakes = [],
+    alerts = [],
+    onSelectQuake,
+    onSelectAlert,
   }: Props = $props();
 
   // ---- Layer / source ids -----------------------------------------------
@@ -101,6 +118,14 @@
   const ISOBAR_SOURCE = "weather-isobars";
   const ISOBAR_LAYER = "weather-isobars-layer";
   const ISOBAR_LABEL_LAYER = "weather-isobars-label";
+  const QUAKE_SOURCE = "usgs-quakes";
+  const QUAKE_LAYER = "usgs-quakes-layer";
+  const ALERT_SOURCE = "gdacs-alerts";
+  const ALERT_RING_LAYER = "gdacs-alerts-ring";
+  const ALERT_LAYER = "gdacs-alerts-layer";
+  const PICK_SOURCE = "forecast-pick";
+  const PICK_RING_LAYER = "forecast-pick-ring";
+  const PICK_DOT_LAYER = "forecast-pick-dot";
 
   let mapContainer: HTMLDivElement;
   let map: maplibregl.Map | null = null;
@@ -139,6 +164,20 @@
       `${tooltipIconSvg(style.color, style.iconName)} ${escapeHtml(event.title)}</div>` +
       `<div style="color:#8595A5;font-size:11px">${escapeHtml(categoryNames)}</div>`
     );
+  }
+
+  /** Replaces any existing hover popup — fast pointer movement used to orphan them. */
+  function showHoverPopup(coords: [number, number], html: string) {
+    if (!map) return;
+    hoverPopup?.remove();
+    hoverPopup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 10,
+    })
+      .setLngLat(coords)
+      .setHTML(html)
+      .addTo(map);
   }
 
   function formatWeatherLine(w: WeatherSnapshot): string {
@@ -397,6 +436,72 @@
       hoverPopup = null;
     });
 
+    // ---- Earthquakes and GDACS alerts ----
+
+    for (const layerId of [QUAKE_LAYER, ALERT_LAYER]) {
+      map.on("mouseenter", layerId, () => {
+        if (map) map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layerId, () => {
+        if (map) map.getCanvas().style.cursor = "";
+        hoverPopup?.remove();
+        hoverPopup = null;
+      });
+    }
+
+    map.on("mouseenter", QUAKE_LAYER, (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const quake = id ? quakes.find((q) => q.id === id) : undefined;
+      if (!map || !quake) return;
+      showHoverPopup(
+        [quake.lng, quake.lat],
+        `<div style="font-weight:600;color:#E8EEF4;font-size:12px">M${quake.magnitude.toFixed(1)} earthquake</div>` +
+          `<div style="color:#8595A5;font-size:11px">${escapeHtml(quake.place)}</div>` +
+          `<div style="color:#5B6874;font-size:10px">${quake.depthKm.toFixed(0)} km deep · ${relativeTime(quake.time)}</div>`,
+      );
+    });
+
+    map.on("mouseenter", ALERT_LAYER, (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const alert = id ? alerts.find((a) => a.id === id) : undefined;
+      if (!map || !alert) return;
+      showHoverPopup(
+        [alert.lng, alert.lat],
+        `<div style="display:flex;align-items:center;gap:5px;font-weight:600;color:#E8EEF4;font-size:12px">` +
+          `<span style="width:7px;height:7px;border-radius:99px;background:${ALERT_COLORS[alert.alertLevel]}"></span>` +
+          `${escapeHtml(alert.title)}</div>` +
+          `<div style="color:#8595A5;font-size:11px">GDACS ${alert.alertLevel.toLowerCase()} alert</div>` +
+          (alert.severityText
+            ? `<div style="color:#5B6874;font-size:10px">${escapeHtml(alert.severityText)}</div>`
+            : ""),
+      );
+    });
+
+    map.on("click", QUAKE_LAYER, (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const quake = id ? quakes.find((q) => q.id === id) : undefined;
+      if (quake) onSelectQuake?.(quake);
+    });
+
+    map.on("click", ALERT_LAYER, (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const alert = id ? alerts.find((a) => a.id === id) : undefined;
+      if (alert) onSelectAlert?.(alert);
+    });
+
+    // Click on bare map → point forecast. Guarded against every marker layer so
+    // that opening an event doesn't also drop a forecast pin underneath it.
+    map.on("click", (e) => {
+      if (!map || !onSelectPoint) return;
+      const overMarker = map.queryRenderedFeatures(e.point, {
+        layers: [CLUSTERS_LAYER, POINTS_LAYER, QUAKE_LAYER, ALERT_LAYER].filter((id) =>
+          map?.getLayer(id),
+        ),
+      }).length;
+      if (overMarker) return;
+      onSelectPoint({ lat: e.lngLat.lat, lng: e.lngLat.wrap().lng });
+    });
+
     // `sourcedata` fires once per tile per source — syncing DOM markers on
     // every one of them was thrashing during pan/zoom. Collapse bursts into a
     // single sync.
@@ -435,6 +540,166 @@
       type: "line",
       source: NEARME_SOURCE,
       paint: { "line-color": "#4FA8E0", "line-width": 1.5 },
+    });
+  }
+
+  // =========================
+  // USGS earthquakes / GDACS alerts
+  // =========================
+
+  function quakeGeoJson(): GeoJSON.FeatureCollection<GeoJSON.Point> {
+    return {
+      type: "FeatureCollection",
+      features: quakes.map((q) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [q.lng, q.lat] },
+        properties: { id: q.id, mag: q.magnitude },
+      })),
+    };
+  }
+
+  function alertGeoJson(): GeoJSON.FeatureCollection<GeoJSON.Point> {
+    return {
+      type: "FeatureCollection",
+      features: alerts.map((a) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [a.lng, a.lat] },
+        properties: {
+          id: a.id,
+          color: ALERT_COLORS[a.alertLevel],
+          // Red alerts read as more urgent through size as well as colour.
+          radius: a.alertLevel === "Red" ? 9 : a.alertLevel === "Orange" ? 7 : 5.5,
+        },
+      })),
+    };
+  }
+
+  function syncHazardData() {
+    if (!map || !mapLoaded) return;
+    (map.getSource(QUAKE_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      quakeGeoJson(),
+    );
+    (map.getSource(ALERT_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      alertGeoJson(),
+    );
+  }
+
+  /** Added once on load; visibility and contents are driven by the data arrays. */
+  function addHazardLayers() {
+    if (!map) return;
+
+    map.addSource(QUAKE_SOURCE, { type: "geojson", data: quakeGeoJson() });
+    map.addLayer({
+      id: QUAKE_LAYER,
+      type: "circle",
+      source: QUAKE_SOURCE,
+      paint: {
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["get", "mag"],
+          2.5,
+          3,
+          4,
+          5.5,
+          5,
+          8,
+          6,
+          12,
+          8,
+          20,
+        ],
+        "circle-color": [
+          "interpolate",
+          ["linear"],
+          ["get", "mag"],
+          2.5,
+          "#7FD4C9",
+          4,
+          "#E0C060",
+          5,
+          "#FFB443",
+          6,
+          "#FF7A45",
+          7,
+          "#FF4D4D",
+        ],
+        "circle-opacity": 0.55,
+        "circle-stroke-width": 1,
+        "circle-stroke-color": "rgba(7,11,16,0.65)",
+      },
+    });
+
+    map.addSource(ALERT_SOURCE, { type: "geojson", data: alertGeoJson() });
+    map.addLayer({
+      id: ALERT_RING_LAYER,
+      type: "circle",
+      source: ALERT_SOURCE,
+      paint: {
+        "circle-radius": ["+", ["get", "radius"], 5],
+        "circle-color": ["get", "color"],
+        "circle-opacity": 0.18,
+      },
+    });
+    map.addLayer({
+      id: ALERT_LAYER,
+      type: "circle",
+      source: ALERT_SOURCE,
+      paint: {
+        "circle-radius": ["get", "radius"],
+        "circle-color": ["get", "color"],
+        "circle-stroke-width": 1.5,
+        "circle-stroke-color": "rgba(7,11,16,0.8)",
+      },
+    });
+  }
+
+  // =========================
+  // Forecast pick marker
+  // =========================
+
+  function renderForecastPick() {
+    if (!map || !mapLoaded) return;
+
+    if (map.getLayer(PICK_DOT_LAYER)) map.removeLayer(PICK_DOT_LAYER);
+    if (map.getLayer(PICK_RING_LAYER)) map.removeLayer(PICK_RING_LAYER);
+    if (map.getSource(PICK_SOURCE)) map.removeSource(PICK_SOURCE);
+
+    if (!forecastPoint) return;
+
+    map.addSource(PICK_SOURCE, {
+      type: "geojson",
+      data: {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Point",
+          coordinates: [forecastPoint.lng, forecastPoint.lat],
+        },
+      },
+    });
+    map.addLayer({
+      id: PICK_RING_LAYER,
+      type: "circle",
+      source: PICK_SOURCE,
+      paint: {
+        "circle-radius": 11,
+        "circle-color": "transparent",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-color": "#E8EEF4",
+        "circle-stroke-opacity": 0.85,
+      },
+    });
+    map.addLayer({
+      id: PICK_DOT_LAYER,
+      type: "circle",
+      source: PICK_SOURCE,
+      paint: {
+        "circle-radius": 3.5,
+        "circle-color": "#E8EEF4",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-color": "rgba(7,11,16,0.7)",
+      },
     });
   }
 
@@ -910,6 +1175,10 @@
         },
       });
 
+      // Hazard layers go on top of the EONET markers — a GDACS red alert is
+      // the most important thing on the map when one exists.
+      addHazardLayers();
+
       mapLoaded = true;
       renderMarkers();
       renderNearMeCircle();
@@ -949,6 +1218,19 @@
   $effect(() => {
     userLocation;
     renderNearMeCircle();
+  });
+
+  $effect(() => {
+    mapLoaded;
+    forecastPoint;
+    renderForecastPick();
+  });
+
+  $effect(() => {
+    mapLoaded;
+    quakes;
+    alerts;
+    syncHazardData();
   });
 
   // Rebuild when the layer, model run, or palette changes...
@@ -1004,7 +1286,7 @@
           <button
             type="button"
             onclick={onRetry}
-            class="self-start rounded-lg border border-sev-high/60 px-2 py-1 text-xs font-medium text-sev-high transition-colors hover:bg-sev-high hover:text-abyss"
+            class="self-start rounded-lg border border-sev-high/60 px-2 py-1 text-[13px] font-medium text-sev-high transition-colors hover:bg-sev-high hover:text-abyss"
           >
             Retry
           </button>
@@ -1013,14 +1295,14 @@
     {/if}
 
     {#if weatherLayerError}
-      <div class="glass pointer-events-auto max-w-xs rounded-xl px-3 py-2 text-xs text-sev-high">
+      <div class="glass pointer-events-auto max-w-xs rounded-xl px-3 py-2 text-[13px] text-sev-high">
         Weather layer: {weatherLayerError}
       </div>
     {/if}
 
     {#if !loading && !error}
       <div
-        class="glass pointer-events-auto rounded-full px-3 py-1 text-xs font-medium text-muted tabular-nums"
+        class="glass pointer-events-auto rounded-full px-3 py-1 text-[13px] font-medium text-muted tabular-nums"
       >
         <span class="text-ink">{eventCount}</span>
         event{eventCount === 1 ? "" : "s"} shown

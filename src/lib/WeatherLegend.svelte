@@ -86,8 +86,8 @@
 {#if !failed && stops.length}
   <div class="glass w-56 rounded-xl px-2.5 py-2">
     <div class="mb-1 flex items-baseline justify-between gap-2">
-      <span class="text-[11px] font-semibold text-ink">{def.label}</span>
-      {#if unit}<span class="text-[10px] text-muted">{unit}</span>{/if}
+      <span class="text-[12px] font-semibold text-ink">{def.label}</span>
+      {#if unit}<span class="text-[12px] text-muted">{unit}</span>{/if}
     </div>
 
     <div class="h-2 w-full rounded-full" style={`background:${gradient}`}></div>
@@ -95,7 +95,7 @@
     <div class="relative mt-1 h-3">
       {#each labelled as stop (stop.at)}
         <span
-          class="absolute -translate-x-1/2 text-[9px] text-muted tabular-nums"
+          class="absolute -translate-x-1/2 text-[11px] text-muted tabular-nums"
           style={`left:${Math.min(96, Math.max(4, stop.at * 100))}%`}
         >
           {stop.label}

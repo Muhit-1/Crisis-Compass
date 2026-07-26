@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import MapView from "./lib/MapView.svelte";
   import FilterSidebar from "./lib/FilterSidebar.svelte";
   import EventPanel from "./lib/EventPanel.svelte";
@@ -14,6 +14,12 @@
   import type { BasemapKey } from "./lib/basemaps";
   import NearMeCard from "./lib/NearMeCard.svelte";
   import WeatherLegend from "./lib/WeatherLegend.svelte";
+  import ForecastPanel from "./lib/ForecastPanel.svelte";
+  import HazardPanel from "./lib/HazardPanel.svelte";
+  import MapKey from "./lib/MapKey.svelte";
+  import StatusChips from "./lib/StatusChips.svelte";
+  import { hazardsStore } from "./lib/hazardsStore.svelte";
+  import type { GdacsAlert, Quake } from "./types/hazards";
   import {
     getCurrentPosition,
     haversineKm,
@@ -29,6 +35,64 @@
   let activeCategories = $state<Set<string>>(new Set());
   let selectedEvent = $state<EonetEvent | null>(null);
   let mapView: MapView;
+
+  // Every detail view shares the same slot on the right, so opening one
+  // dismisses the others.
+  let forecastPoint = $state<{ lat: number; lng: number } | null>(null);
+  let selectedQuake = $state<Quake | null>(null);
+  let selectedAlert = $state<GdacsAlert | null>(null);
+
+  function clearPanels() {
+    selectedEvent = null;
+    forecastPoint = null;
+    selectedQuake = null;
+    selectedAlert = null;
+  }
+
+  function selectEvent(event: EonetEvent) {
+    clearPanels();
+    selectedEvent = event;
+  }
+
+  function selectPoint(point: { lat: number; lng: number }) {
+    clearPanels();
+    forecastPoint = point;
+  }
+
+  function selectQuake(quake: Quake) {
+    clearPanels();
+    selectedQuake = quake;
+  }
+
+  function selectAlert(alert: GdacsAlert) {
+    clearPanels();
+    selectedAlert = alert;
+  }
+
+  /**
+   * Both feeds are opt-in and lazy: nothing is requested until the layer is
+   * switched on. Earthquakes (~267 kB) and GDACS (~137 kB) are light enough to
+   * default on — unlike EONET's unbounded feed, which is what made the app
+   * slow — so the map shows something useful on first load.
+   */
+  let showQuakes = $state(true);
+  let showAlerts = $state(true);
+
+  // untrack is load-bearing: start*() synchronously reads the store's own
+  // `quakes`/`alerts` state, so without it, the fetch writing those arrays
+  // retriggers this effect and the feed polls itself in a tight loop.
+  $effect(() => {
+    const on = showQuakes;
+    untrack(() => (on ? hazardsStore.startQuakes() : hazardsStore.stopQuakes()));
+  });
+
+  $effect(() => {
+    const on = showAlerts;
+    untrack(() => (on ? hazardsStore.startAlerts() : hazardsStore.stopAlerts()));
+  });
+
+  const visibleQuakes = $derived(showQuakes ? hazardsStore.quakes : []);
+  const visibleAlerts = $derived(showAlerts ? hazardsStore.alerts : []);
 
   // Weather overlay toggle
   let showWeatherOnMap = $state(false);
@@ -113,6 +177,15 @@
 
   const displayedEvents = $derived(timelineStore.eventsAtSelectedTime);
 
+  /** EONET events that survive the category filter — i.e. actually on the map. */
+  const visibleEventCount = $derived(
+    activeCategories.size === 0
+      ? 0
+      : displayedEvents.filter((e) =>
+          e.categories.some((c) => activeCategories.has(c.id)),
+        ).length,
+  );
+
   const isLoading = $derived(
     timelineStore.isPast ? timelineStore.loading : eventsStore.loading,
   );
@@ -153,6 +226,7 @@
   onDestroy(() => {
     eventsStore.stopAutoRefresh();
     timelineStore.stopClock();
+    hazardsStore.stopAll();
   });
 </script>
 
@@ -167,7 +241,13 @@
       bind:this={mapView}
       events={displayedEvents}
       {activeCategories}
-      onSelectEvent={(event) => (selectedEvent = event)}
+      onSelectEvent={selectEvent}
+      onSelectPoint={selectPoint}
+      onSelectQuake={selectQuake}
+      onSelectAlert={selectAlert}
+      quakes={visibleQuakes}
+      alerts={visibleAlerts}
+      {forecastPoint}
       loading={isLoading}
       error={loadError}
       onRetry={retryLoad}
@@ -181,9 +261,9 @@
     />
   </div>
 
-  <!-- Floating top bar: brand · live ticker · location -->
+  <!-- Floating top bar: brand · what's on the map · location -->
   <header
-    class="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 p-3"
+    class="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start gap-2 p-3"
   >
     <div
       class="glass pointer-events-auto flex shrink-0 items-center gap-2 rounded-full py-2 pr-4 pl-3"
@@ -194,14 +274,17 @@
       </h1>
     </div>
 
-    <div class="pointer-events-auto hidden min-w-0 flex-1 sm:block">
-      <LiveBar onJumpToEvent={jumpToEvent} />
-    </div>
-
-    <div class="pointer-events-auto ml-auto flex shrink-0 items-center gap-2">
+    <div class="pointer-events-auto ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <StatusChips
+        quakeCount={visibleQuakes.length}
+        alertCount={visibleAlerts.length}
+        eventCount={visibleEventCount}
+        {showQuakes}
+        {showAlerts}
+      />
       {#if nearMeError}
         <span
-          class="glass hidden max-w-[16rem] truncate rounded-full px-3 py-1.5 text-[11px] text-sev-high lg:block"
+          class="glass hidden max-w-[16rem] truncate rounded-full px-3 py-1.5 text-[12px] text-sev-high lg:block"
         >
           {nearMeError}
         </span>
@@ -211,7 +294,7 @@
         type="button"
         onclick={userLocation ? clearNearMe : activateNearMe}
         disabled={nearMeStatus === "locating"}
-        class="glass flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors hover:text-accent disabled:opacity-50"
+        class="glass flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium whitespace-nowrap transition-colors hover:text-accent disabled:opacity-50"
       >
         <Icon name="compass" size={14} />
         {nearMeStatus === "locating"
@@ -232,26 +315,65 @@
     onSetWorldWeatherLayer={(key) => (worldWeatherLayer = key)}
     {showIsobars}
     onToggleIsobars={() => (showIsobars = !showIsobars)}
+    {showQuakes}
+    onToggleQuakes={() => (showQuakes = !showQuakes)}
+    {showAlerts}
+    onToggleAlerts={() => (showAlerts = !showAlerts)}
+    quakeCount={hazardsStore.quakes.length}
+    alertCount={hazardsStore.alerts.length}
+    quakeError={hazardsStore.quakesError}
+    alertError={hazardsStore.alertsError}
+    quakesLoading={hazardsStore.quakesLoading}
+    alertsLoading={hazardsStore.alertsLoading}
   />
 
   {#if selectedEvent}
     <EventPanel event={selectedEvent} onClose={() => (selectedEvent = null)} />
+  {:else if selectedQuake}
+    <HazardPanel quake={selectedQuake} onClose={() => (selectedQuake = null)} />
+  {:else if selectedAlert}
+    <HazardPanel alert={selectedAlert} onClose={() => (selectedAlert = null)} />
+  {:else if forecastPoint}
+    <ForecastPanel
+      lat={forecastPoint.lat}
+      lng={forecastPoint.lng}
+      selectedTime={timelineStore.selectedTime}
+      onClose={() => (forecastPoint = null)}
+    />
   {/if}
 
-  <!-- Bottom-left stack, raised clear of the timeline bar. -->
-  <div class="absolute bottom-24 left-3 z-30 flex flex-col items-start gap-2">
+  <!--
+    Bottom-left stack, raised clear of the timeline bar. Legends sit closest to
+    the bottom so the key is the last thing between the map and the timeline,
+    with the live ticker above it.
+  -->
+  <div
+    class="pointer-events-none absolute bottom-24 left-3 z-30 flex max-h-[calc(100vh-14rem)] flex-col items-start gap-2 overflow-y-auto"
+  >
+    <div class="pointer-events-auto">
+      <LiveBar onJumpToEvent={jumpToEvent} />
+    </div>
+
     {#if userLocation}
-      <NearMeCard
-        weather={nearMeWeather}
-        weatherLoading={nearMeWeatherLoading}
-        {nearbyCount}
-        onClear={clearNearMe}
-      />
+      <div class="pointer-events-auto">
+        <NearMeCard
+          weather={nearMeWeather}
+          weatherLoading={nearMeWeatherLoading}
+          {nearbyCount}
+          onClear={clearNearMe}
+        />
+      </div>
     {/if}
 
     {#if worldWeatherLayer}
-      <WeatherLegend layer={worldWeatherLayer} {basemap} />
+      <div class="pointer-events-auto">
+        <WeatherLegend layer={worldWeatherLayer} {basemap} />
+      </div>
     {/if}
+
+    <div class="pointer-events-auto">
+      <MapKey {showQuakes} {showAlerts} {activeCategories} />
+    </div>
   </div>
 
   <TimelineSlider />

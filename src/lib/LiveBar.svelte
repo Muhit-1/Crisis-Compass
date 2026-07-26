@@ -1,10 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { eventsStore } from './eventsStore.svelte'
-  import { CATEGORY_STYLES, CATEGORY_ORDER } from './categoryStyles'
+  import { CATEGORY_STYLES } from './categoryStyles'
   import { latestEventTimestamp } from '../types/eonet'
   import type { EonetEvent } from '../types/eonet'
-  import { relativeTime } from './time'
   import Icon from './Icon.svelte'
 
   interface Props {
@@ -15,18 +14,6 @@
 
   const TICKER_SIZE = 5
   const TICKER_INTERVAL_MS = 4500
-
-  // Per-category counts, in the same stable order as the filter sidebar.
-  const categoryCounts = $derived.by(() => {
-    const counts = new Map<string, number>()
-    for (const event of eventsStore.events) {
-      const categoryId = event.categories[0]?.id
-      if (!categoryId || !CATEGORY_STYLES[categoryId]) continue
-      counts.set(categoryId, (counts.get(categoryId) ?? 0) + 1)
-    }
-    return CATEGORY_ORDER.map((id) => ({ style: CATEGORY_STYLES[id], count: counts.get(id) ?? 0 }))
-      .filter((entry) => entry.count > 0)
-  })
 
   // The N most recently updated open events, newest first.
   const recentEvents = $derived.by(() =>
@@ -66,74 +53,38 @@
   function categoryStyleOf(event: EonetEvent) {
     return CATEGORY_STYLES[event.categories[0]?.id ?? ''] ?? null
   }
-
-  let refreshing = $state(false)
-  async function handleManualRefresh() {
-    refreshing = true
-    await eventsStore.refresh(true)
-    refreshing = false
-  }
 </script>
 
-<div class="glass flex items-center gap-3 rounded-full px-3 py-2 text-xs text-ink">
-  <!-- Live alert ticker -->
+<!--
+  A single headline, sized to its content. This used to be a full-width bar
+  across the top of the map, which spent most of its width on nothing and read
+  as a header rather than as an ambient activity feed.
+-->
+{#if activeTickerEvent}
+  {@const style = categoryStyleOf(activeTickerEvent)}
   <button
     type="button"
-    class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-left disabled:cursor-default"
-    disabled={!activeTickerEvent}
-    onclick={() => activeTickerEvent && onJumpToEvent(activeTickerEvent)}
-    title={activeTickerEvent ? 'Jump to this event on the map' : undefined}
+    class="glass flex max-w-[22rem] items-center gap-2 rounded-full py-1.5 pr-3.5 pl-2.5 text-left"
+    onclick={() => onJumpToEvent(activeTickerEvent)}
+    title="Jump to this event on the map"
   >
-    <span class="flex shrink-0 items-center gap-1 text-sev-high">
-      <span class="relative flex h-1.5 w-1.5">
+    <span class="flex shrink-0 items-center gap-1.5 text-sev-high">
+      <span class="relative flex h-2 w-2">
         <span
           class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sev-high opacity-60"
         ></span>
-        <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-sev-high"></span>
+        <span class="relative inline-flex h-2 w-2 rounded-full bg-sev-high"></span>
       </span>
-      <span class="text-[10px] font-semibold tracking-wider uppercase">Live</span>
+      <span class="text-[11px] font-bold tracking-widest uppercase">Live</span>
     </span>
 
-    {#if activeTickerEvent}
-      {@const style = categoryStyleOf(activeTickerEvent)}
-      <span class="flex min-w-0 items-center gap-1.5 truncate">
-        {#if style}
-          <span style={`color:${style.color}`} class="shrink-0">
-            <Icon name={style.iconName} size={13} />
-          </span>
-        {/if}
-        <span class="truncate hover:underline">{activeTickerEvent.title}</span>
+    {#if style}
+      <span style={`color:${style.color}`} class="shrink-0">
+        <Icon name={style.iconName} size={14} />
       </span>
-    {:else if eventsStore.loading}
-      <span class="text-muted">Loading recent activity…</span>
-    {:else}
-      <span class="text-muted">No recent events to show.</span>
     {/if}
+    <span class="truncate text-[13px] text-ink hover:underline">
+      {activeTickerEvent.title}
+    </span>
   </button>
-
-  <!-- Per-category stat chips -->
-  {#if categoryCounts.length > 0}
-    <div class="hidden shrink-0 items-center gap-2.5 overflow-x-auto lg:flex">
-      {#each categoryCounts as entry (entry.style.id)}
-        <span class="flex items-center gap-1 whitespace-nowrap" title={entry.style.title}>
-          <span style={`color:${entry.style.color}`}><Icon name={entry.style.iconName} size={13} /></span>
-          <span class="font-medium tabular-nums">{entry.count}</span>
-        </span>
-      {/each}
-    </div>
-  {/if}
-
-  <!-- Refresh status / manual refresh -->
-  <div class="flex shrink-0 items-center gap-1.5 text-muted">
-    <span class="hidden text-[11px] xl:inline">Updated {relativeTime(eventsStore.lastUpdated)}</span>
-    <button
-      type="button"
-      onclick={handleManualRefresh}
-      aria-label="Refresh now"
-      title="Refresh now"
-      class="rounded-lg p-1 text-muted transition-colors hover:bg-panel-2 hover:text-ink"
-    >
-      <Icon name="refresh" size={13} class={refreshing ? 'animate-spin' : ''} />
-    </button>
-  </div>
-</div>
+{/if}

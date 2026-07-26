@@ -28,15 +28,15 @@
     </button>
   </div>
 
-  <p class="mt-1 text-xs text-muted">
+  <p class="mt-1 text-[13px] text-muted">
     <span class="font-medium text-ink tabular-nums">{nearbyCount}</span>
     event{nearbyCount === 1 ? '' : 's'} within 1,000 km
   </p>
 
   {#if weatherLoading}
-    <p class="mt-2 text-xs text-muted">Loading local weather…</p>
+    <p class="mt-2 text-[13px] text-muted">Loading local weather…</p>
   {:else if weather}
-    <div class="mt-2 grid grid-cols-2 gap-y-1.5 gap-x-3 text-xs text-ink">
+    <div class="mt-2 grid grid-cols-2 gap-y-1.5 gap-x-3 text-[13px] text-ink">
       <div class="flex items-center gap-1.5">
         <Icon name="thermometer" size={13} class="text-muted" />
         {Math.round(weather.temperatureC)}°C
@@ -56,6 +56,6 @@
       </div>
     </div>
   {:else}
-    <p class="mt-2 text-xs text-muted">Local weather unavailable.</p>
+    <p class="mt-2 text-[13px] text-muted">Local weather unavailable.</p>
   {/if}
 </aside>
