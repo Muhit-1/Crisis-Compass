@@ -2,6 +2,22 @@ import { getEvents } from './api/eonet'
 import type { EonetEvent } from '../types/eonet'
 
 const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000
+
+/**
+ * Only pull events with activity in this window.
+ *
+ * An unbounded `status=open` query returns 4.8 MB of JSON — EONET keeps events
+ * "open" for years, and each carries its full geometry history, so a wildfire
+ * tracked daily for months contributes hundreds of coordinates. That payload
+ * was downloaded on first paint and again on every auto-refresh, and parsing it
+ * blocks the main thread.
+ *
+ * 30 days cuts it to ~196 kB (24x smaller) while still covering everything
+ * actively developing. The trade-off: long-dormant open events — a volcano
+ * flagged years ago with no recent updates — no longer appear. Raise this if
+ * you want them back; it is the only knob involved.
+ */
+const ACTIVITY_WINDOW_DAYS = 30
 // Prevents two refresh triggers (e.g. auto-timer + a manual click) landing
 // within a few seconds of each other from firing two redundant requests.
 const MIN_GAP_BETWEEN_FETCHES_MS = 20 * 1000
@@ -37,7 +53,7 @@ class EventsStore {
     this.error = null
 
     try {
-      this.events = await getEvents({ status: 'open' })
+      this.events = await getEvents({ status: 'open', days: ACTIVITY_WINDOW_DAYS })
       this.lastUpdated = new Date()
       this.#lastFetchAt = Date.now()
     } catch (err) {

@@ -9,18 +9,11 @@ import type { ExpressionSpecification } from 'maplibre-gl'
  * raster and the Near Me ring would all have to be rebuilt on each switch.
  */
 
+/**
+ * Not user-selectable on its own — derived from whether a data overlay is
+ * active. See the `basemap` derivation in App.svelte.
+ */
 export type BasemapKey = 'simple' | 'detailed'
-
-export interface BasemapOption {
-  key: BasemapKey
-  label: string
-  description: string
-}
-
-export const BASEMAP_OPTIONS: BasemapOption[] = [
-  { key: 'simple', label: 'Simple', description: 'Political map — countries and names' },
-  { key: 'detailed', label: 'Detailed', description: 'Dark map with roads and cities' },
-]
 
 /** Layer ids, shared between the style definition and the visibility toggle. */
 export const BASEMAP_LAYERS = {

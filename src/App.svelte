@@ -35,9 +35,19 @@
 
   // No overlay by default — the plain political map is the resting state.
   let worldWeatherLayer = $state<WeatherLayerKey | null>(null);
-
-  let basemap = $state<BasemapKey>("simple");
   let showIsobars = $state(false);
+
+  /**
+   * The base map follows the data rather than being chosen separately.
+   *
+   * Saturated weather rasters over the pastel political map were unreadable —
+   * two bright layers fighting each other. Any data overlay therefore drops
+   * the map to the dark base, which is what those palettes are designed for.
+   * The political map is the no-overlay resting state.
+   */
+  const basemap = $derived<BasemapKey>(
+    worldWeatherLayer || showIsobars ? "detailed" : "simple",
+  );
 
   function toggleWeatherOnMap() {
     showWeatherOnMap = !showWeatherOnMap;
@@ -220,8 +230,6 @@
     onToggleWeatherOnMap={toggleWeatherOnMap}
     {worldWeatherLayer}
     onSetWorldWeatherLayer={(key) => (worldWeatherLayer = key)}
-    {basemap}
-    onSetBasemap={(key) => (basemap = key)}
     {showIsobars}
     onToggleIsobars={() => (showIsobars = !showIsobars)}
   />

@@ -202,6 +202,17 @@
     eventCount = data.features.length;
   }
 
+  const CLUSTER_SYNC_DEBOUNCE_MS = 150;
+  let clusterSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleClusterSync() {
+    if (clusterSyncTimer) return;
+    clusterSyncTimer = setTimeout(() => {
+      clusterSyncTimer = null;
+      syncClusterLabels();
+    }, CLUSTER_SYNC_DEBOUNCE_MS);
+  }
+
   function syncClusterLabels() {
     if (!map || !map.getLayer(CLUSTERS_LAYER)) return;
 
@@ -249,20 +260,35 @@
   // Pulse animation (rAF loop)
   // =========================
 
-  function startPulseAnimation() {
-    const start = performance.now();
-    const PERIOD_MS = 2200;
+  /**
+   * Every `setPaintProperty` marks the style dirty and forces MapLibre to
+   * repaint the whole map. Running two of them per animation frame meant the
+   * map never stopped redrawing — even with zero markers on screen — which
+   * also re-blurred every backdrop-filtered panel above the canvas 60x a
+   * second, and stopped the `idle` event from ever firing.
+   *
+   * So: only animate when there are actually markers to pulse, and cap the
+   * paint updates well below the frame rate. A 2.2s pulse doesn't need 60fps.
+   */
+  const PULSE_PERIOD_MS = 2200;
+  const PULSE_UPDATE_MS = 1000 / 20;
 
-    function tick() {
-      if (!map || !map.getLayer(POINTS_HALO_LAYER)) return;
-      const t = ((performance.now() - start) / PERIOD_MS) % 1;
-      map.setPaintProperty(POINTS_HALO_LAYER, "circle-radius", 9 + t * 14);
-      map.setPaintProperty(
-        POINTS_HALO_LAYER,
-        "circle-opacity",
-        0.45 * (1 - t),
-      );
+  function startPulseAnimation() {
+    if (pulseRaf != null) return; // already running
+    const start = performance.now();
+    let lastUpdate = 0;
+
+    function tick(now: number) {
+      // Reschedule first — bailing out early used to kill the loop for good
+      // if the layer was momentarily absent.
       pulseRaf = requestAnimationFrame(tick);
+      if (!map || !map.getLayer(POINTS_HALO_LAYER)) return;
+      if (now - lastUpdate < PULSE_UPDATE_MS) return;
+      lastUpdate = now;
+
+      const t = ((now - start) / PULSE_PERIOD_MS) % 1;
+      map.setPaintProperty(POINTS_HALO_LAYER, "circle-radius", 9 + t * 14);
+      map.setPaintProperty(POINTS_HALO_LAYER, "circle-opacity", 0.45 * (1 - t));
     }
     pulseRaf = requestAnimationFrame(tick);
   }
@@ -371,10 +397,13 @@
       hoverPopup = null;
     });
 
+    // `sourcedata` fires once per tile per source — syncing DOM markers on
+    // every one of them was thrashing during pan/zoom. Collapse bursts into a
+    // single sync.
     map.on("sourcedata", (e) => {
-      if (e.sourceId === EVENTS_SOURCE) syncClusterLabels();
+      if (e.sourceId === EVENTS_SOURCE) scheduleClusterSync();
     });
-    map.on("moveend", syncClusterLabels);
+    map.on("moveend", scheduleClusterSync);
   }
 
   // =========================
@@ -444,6 +473,33 @@
     }
   }
 
+  /**
+   * The om:// protocol pulls in a ~2 MB WebAssembly decoder. Registering it
+   * up front made every visit pay for it, including the default view which has
+   * no weather on it at all — so it's deferred until a data layer is actually
+   * requested. `protocolReady` is reactive so the render effects re-run and
+   * finish the job once it resolves.
+   */
+  let protocolReady = $state(false);
+  let protocolPending = false;
+
+  function ensureProtocol(): boolean {
+    if (protocolReady) return true;
+    if (!protocolPending) {
+      protocolPending = true;
+      ensureOmProtocolRegistered()
+        .then(() => {
+          protocolReady = true;
+        })
+        .catch((err: unknown) => {
+          protocolPending = false;
+          weatherLayerError =
+            err instanceof Error ? err.message : "Weather decoder failed to load";
+        });
+    }
+    return false;
+  }
+
   /** Full rebuild — needed when the layer, model run, or palette changes. */
   function renderWeatherLayer() {
     if (!map || !mapLoaded) return;
@@ -454,6 +510,7 @@
 
     const key = worldWeatherLayer;
     if (!key || !runIndex) return;
+    if (!ensureProtocol()) return;
 
     const def = weatherLayer(key);
     if (!hasVariable(runIndex, def.variable)) {
@@ -517,6 +574,7 @@
 
     if (!showIsobars || !runIndex) return;
     if (!hasVariable(runIndex, ISOBAR_VARIABLE)) return;
+    if (!ensureProtocol()) return;
 
     const url = omIsobarUrl(weatherTime, runIndex);
     const stroke = basemap === "detailed" ? "#E8EEF4" : "#20384A";
@@ -635,13 +693,6 @@
   // =========================
 
   onMount(() => {
-    // Step 1 — register om:// protocol BEFORE creating the map so it's
-    // available as soon as we add the weather source.  Any error here is
-    // non-fatal: the base map still loads, only the weather overlay fails.
-    ensureOmProtocolRegistered().catch((err: unknown) => {
-      console.warn("Open-Meteo weather overlay unavailable:", err);
-    });
-
     // Step 2 — build the MapLibre map with an inline style.
     //
     // Both basemaps are declared up front and switched by visibility, and the
@@ -862,9 +913,9 @@
       mapLoaded = true;
       renderMarkers();
       renderNearMeCircle();
-      // Weather is left to its $effect, which tracks `mapLoaded` — calling it
-      // here too is what created the duplicate-source race.
-      startPulseAnimation();
+      // Weather and the pulse are both left to their $effects, which track
+      // `mapLoaded` — calling them here too is what created the
+      // duplicate-source race.
       attachInteractionHandlers();
     });
 
@@ -877,6 +928,7 @@
 
   onDestroy(() => {
     stopPulseAnimation();
+    if (clusterSyncTimer) clearTimeout(clusterSyncTimer);
     resizeObserver?.disconnect();
     hoverPopup?.remove();
     for (const marker of clusterLabelMarkers.values()) marker.remove();
@@ -905,6 +957,7 @@
     worldWeatherLayer;
     runIndex;
     basemap;
+    protocolReady;
     renderWeatherLayer();
   });
 
@@ -913,7 +966,15 @@
     showIsobars;
     runIndex;
     basemap;
+    protocolReady;
     renderIsobars();
+  });
+
+  // Only pulse while there are markers to pulse — otherwise the map would
+  // repaint forever behind an empty screen.
+  $effect(() => {
+    if (mapLoaded && eventCount > 0) startPulseAnimation();
+    else stopPulseAnimation();
   });
 
   // ...and swap URLs in place when only the selected hour moves.

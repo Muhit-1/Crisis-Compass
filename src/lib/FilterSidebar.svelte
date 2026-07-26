@@ -1,7 +1,6 @@
 <script lang="ts">
   import { CATEGORY_STYLES } from './categoryStyles'
   import { WEATHER_LAYERS, type WeatherLayerKey } from './weatherLayers'
-  import { BASEMAP_OPTIONS, type BasemapKey } from './basemaps'
   import Icon from './Icon.svelte'
   import type { IconName } from './icons'
 
@@ -12,8 +11,6 @@
     onToggleWeatherOnMap: () => void
     worldWeatherLayer: WeatherLayerKey | null
     onSetWorldWeatherLayer: (key: WeatherLayerKey | null) => void
-    basemap: BasemapKey
-    onSetBasemap: (key: BasemapKey) => void
     showIsobars: boolean
     onToggleIsobars: () => void
   }
@@ -25,8 +22,6 @@
     onToggleWeatherOnMap,
     worldWeatherLayer,
     onSetWorldWeatherLayer,
-    basemap,
-    onSetBasemap,
     showIsobars,
     onToggleIsobars,
   }: Props = $props()
@@ -111,32 +106,29 @@
 
       <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2.5">
         {#if openSection === 'layers'}
-          <div class="mb-2 px-2">
-            <p class="mb-1 text-[10px] font-semibold tracking-wider text-faint uppercase">
-              Base map
-            </p>
-            <div class="flex gap-1 rounded-lg bg-panel-2/70 p-0.5">
-              {#each BASEMAP_OPTIONS as option (option.key)}
-                <button
-                  type="button"
-                  onclick={() => onSetBasemap(option.key)}
-                  title={option.description}
-                  class={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
-                    basemap === option.key
-                      ? 'bg-accent/25 text-accent'
-                      : 'text-muted hover:text-ink'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <p class="mb-1 px-2 text-[10px] font-semibold tracking-wider text-faint uppercase">
-            Weather overlay
-          </p>
+          <!--
+            One list, not two controls. The base map isn't independently
+            selectable any more: picking a weather layer implies the dark map,
+            because saturated data over the pastel political map is unreadable.
+            "Simple" is just the no-overlay resting state.
+          -->
           <div class="flex flex-col gap-0.5">
+            <button
+              type="button"
+              onclick={() => onSetWorldWeatherLayer(null)}
+              class={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+                worldWeatherLayer === null
+                  ? 'bg-accent/20 text-accent'
+                  : 'text-ink hover:bg-panel-2'
+              }`}
+            >
+              <Icon name="layers" size={15} />
+              <span class="min-w-0 flex-1 truncate">Simple</span>
+              <span class="shrink-0 text-[9px] text-faint">Political map</span>
+            </button>
+
+            <div class="my-1 h-px bg-edge/60"></div>
+
             {#each WEATHER_LAYERS as option (option.key)}
               <button
                 type="button"
@@ -183,8 +175,8 @@
           </div>
 
           <p class="mt-2 px-2 text-[10px] leading-relaxed text-faint">
-            Global overlay from Open-Meteo (DWD ICON model). Wind shows speed with
-            direction arrows.
+            Weather from Open-Meteo (DWD ICON). Any layer switches the base map to
+            the dark one so the data stays readable.
           </p>
         {:else if openSection === 'categories'}
           <div class="mb-1.5 flex items-center justify-between px-2">
