@@ -12,10 +12,12 @@ export interface SeverityResult {
   reasons: string[]
 }
 
+// Brightened for the dark map shell — must stay legible as small cluster
+// bubbles and 10px badges. Keep in sync with --color-sev-* in app.css.
 export const SEVERITY_COLORS: Record<SeverityLevel, string> = {
-  low: '#8FBF8F',
-  medium: '#E0A458',
-  high: '#C97064',
+  low: '#5FD68A',
+  medium: '#FFB443',
+  high: '#FF6A5A',
 }
 
 export const SEVERITY_LABELS: Record<SeverityLevel, string> = {

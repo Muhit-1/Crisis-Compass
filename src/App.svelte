@@ -6,13 +6,14 @@
   import LiveBar from "./lib/LiveBar.svelte";
   import TimelineSlider from "./lib/TimelineSlider.svelte";
   import Icon from "./lib/Icon.svelte";
-  import { CATEGORY_STYLES } from "./lib/categoryStyles";
   import { eventsStore } from "./lib/eventsStore.svelte";
   import { timelineStore } from "./lib/timelineStore.svelte";
   import type { EonetEvent } from "./types/eonet";
   import { getCurrentWeather } from "./lib/api/weather";
   import type { WeatherLayerKey } from "./lib/weatherLayers";
+  import type { BasemapKey } from "./lib/basemaps";
   import NearMeCard from "./lib/NearMeCard.svelte";
+  import WeatherLegend from "./lib/WeatherLegend.svelte";
   import {
     getCurrentPosition,
     haversineKm,
@@ -22,19 +23,23 @@
   import { isPointGeometry, latestGeometryOf } from "./types/eonet";
   import type { WeatherSnapshot } from "./types/weather";
 
-  let activeCategories = $state<Set<string>>(
-    new Set(Object.keys(CATEGORY_STYLES)),
-  );
+  // Starts empty on purpose. EONET returns ~7k open events and clustering all
+  // of them on first paint is the single slowest thing the app does — the user
+  // opts into the categories they actually care about.
+  let activeCategories = $state<Set<string>>(new Set());
   let selectedEvent = $state<EonetEvent | null>(null);
   let mapView: MapView;
 
   // Weather overlay toggle
   let showWeatherOnMap = $state(false);
 
-  // Selected world weather layer
-  let worldWeatherLayer = $state<WeatherLayerKey | null>("temp_new");
+  // No overlay by default — the plain political map is the resting state.
+  let worldWeatherLayer = $state<WeatherLayerKey | null>(null);
 
-function toggleWeatherOnMap() {
+  let basemap = $state<BasemapKey>("simple");
+  let showIsobars = $state(false);
+
+  function toggleWeatherOnMap() {
     showWeatherOnMap = !showWeatherOnMap;
   }
 
@@ -96,34 +101,18 @@ function toggleWeatherOnMap() {
     }
   }
 
-  // TEMP: API connectivity check — delete this whole block when done
-  let weatherStatus = $state<"checking" | "ok" | "error">("checking");
-
-  const eonetStatus = $derived(
-    eventsStore.error
-      ? "error"
-      : eventsStore.loading && eventsStore.events.length === 0
-        ? "checking"
-        : "ok",
-  );
-  // END TEMP
-
-  const displayedEvents = $derived(
-    timelineStore.active
-      ? timelineStore.eventsOnSelectedDay
-      : eventsStore.events,
-  );
+  const displayedEvents = $derived(timelineStore.eventsAtSelectedTime);
 
   const isLoading = $derived(
-    timelineStore.active ? timelineStore.loading : eventsStore.loading,
+    timelineStore.isPast ? timelineStore.loading : eventsStore.loading,
   );
 
   const loadError = $derived(
-    timelineStore.active ? timelineStore.error : eventsStore.error,
+    timelineStore.isPast ? timelineStore.error : eventsStore.error,
   );
 
   function retryLoad() {
-    if (timelineStore.active) timelineStore.retry();
+    if (timelineStore.isPast) timelineStore.retry();
     else void eventsStore.refresh(true);
   }
 
@@ -148,133 +137,113 @@ function toggleWeatherOnMap() {
 
   onMount(() => {
     eventsStore.startAutoRefresh();
-
-    // TEMP: remove this block
-    getCurrentWeather(20, 0)
-      .then(() => (weatherStatus = "ok"))
-      .catch(() => (weatherStatus = "error"));
-    // END TEMP
+    timelineStore.startClock();
   });
 
   onDestroy(() => {
     eventsStore.stopAutoRefresh();
+    timelineStore.stopClock();
   });
 </script>
 
-<div class="flex h-screen w-screen flex-col bg-[#FAF6EC]">
+<!--
+  Full-bleed shell: the map is the page, and every control floats over it.
+  Nothing boxes the map in or steals width from it — that framing is the single
+  biggest difference between a dashboard and a weather map.
+-->
+<div class="relative h-screen w-screen overflow-hidden bg-abyss text-ink">
+  <div class="absolute inset-0">
+    <MapView
+      bind:this={mapView}
+      events={displayedEvents}
+      {activeCategories}
+      onSelectEvent={(event) => (selectedEvent = event)}
+      loading={isLoading}
+      error={loadError}
+      onRetry={retryLoad}
+      {showWeatherOnMap}
+      {worldWeatherLayer}
+      {userLocation}
+      {basemap}
+      {showIsobars}
+      weatherTime={timelineStore.selectedTime}
+      runIndex={timelineStore.run}
+    />
+  </div>
+
+  <!-- Floating top bar: brand · live ticker · location -->
   <header
-    class="flex items-center justify-between border-b border-[#E8E0CC] bg-[#FFFDF8] px-4 py-2"
+    class="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 p-3"
   >
-    <h1
-      class="flex items-center gap-1.5 text-base font-semibold text-[#33394A]"
+    <div
+      class="glass pointer-events-auto flex shrink-0 items-center gap-2 rounded-full py-2 pr-4 pl-3"
     >
-      <Icon name="compass" size={18} />
-      Crisis Compass
-    </h1>
-
-    <!-- TEMP: API connection status — delete this div when done -->
-    <div class="flex items-center gap-2 text-[11px] font-medium">
-      <span
-        class={`rounded-full px-2 py-0.5 ${
-          eonetStatus === "ok"
-            ? "bg-[#8FBF8F]/20 text-[#4f7a4f]"
-            : eonetStatus === "error"
-              ? "bg-[#C97064]/20 text-[#C97064]"
-              : "bg-[#E0A458]/20 text-[#8a662f]"
-        }`}
-      >
-        EONET
-        {eonetStatus === "ok"
-          ? " ✓ connected"
-          : eonetStatus === "error"
-            ? " ✗ failed"
-            : " … checking"}
-      </span>
-
-      <span
-        class={`rounded-full px-2 py-0.5 ${
-          weatherStatus === "ok"
-            ? "bg-[#8FBF8F]/20 text-[#4f7a4f]"
-            : weatherStatus === "error"
-              ? "bg-[#C97064]/20 text-[#C97064]"
-              : "bg-[#E0A458]/20 text-[#8a662f]"
-        }`}
-      >
-        Open-Meteo
-        {weatherStatus === "ok"
-          ? " ✓ connected"
-          : weatherStatus === "error"
-            ? " ✗ failed"
-            : " … checking"}
-      </span>
+      <Icon name="compass" size={17} class="text-accent" />
+      <h1 class="text-sm font-semibold tracking-tight whitespace-nowrap">
+        Crisis Compass
+      </h1>
     </div>
-    <!-- END TEMP -->
-    <button
-      type="button"
-      onclick={userLocation ? clearNearMe : activateNearMe}
-      disabled={nearMeStatus === "locating"}
-      class="flex items-center gap-1 rounded-full border border-[#E8E0CC] px-2.5 py-1 text-xs font-medium text-[#33394A] hover:bg-[#FAF6EC] disabled:opacity-50"
-    >
-      <Icon name="compass" size={13} />
-      {nearMeStatus === "locating"
-        ? "Locating…"
-        : userLocation
-          ? "Exit Near Me"
-          : "Near Me"}
-    </button>
 
-    {#if nearMeError}
-      <span class="text-[11px] text-[#C97064]">{nearMeError}</span>
-    {/if}
+    <div class="pointer-events-auto hidden min-w-0 flex-1 sm:block">
+      <LiveBar onJumpToEvent={jumpToEvent} />
+    </div>
 
+    <div class="pointer-events-auto ml-auto flex shrink-0 items-center gap-2">
+      {#if nearMeError}
+        <span
+          class="glass hidden max-w-[16rem] truncate rounded-full px-3 py-1.5 text-[11px] text-sev-high lg:block"
+        >
+          {nearMeError}
+        </span>
+      {/if}
 
-    <span class="text-xs text-[#8A8473]">
-      Live natural events — NASA EONET
-    </span>
+      <button
+        type="button"
+        onclick={userLocation ? clearNearMe : activateNearMe}
+        disabled={nearMeStatus === "locating"}
+        class="glass flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors hover:text-accent disabled:opacity-50"
+      >
+        <Icon name="compass" size={14} />
+        {nearMeStatus === "locating"
+          ? "Locating…"
+          : userLocation
+            ? "Exit Near Me"
+            : "Near Me"}
+      </button>
+    </div>
   </header>
 
-  <LiveBar onJumpToEvent={jumpToEvent} />
+  <FilterSidebar
+    active={activeCategories}
+    onToggle={toggleCategory}
+    {showWeatherOnMap}
+    onToggleWeatherOnMap={toggleWeatherOnMap}
+    {worldWeatherLayer}
+    onSetWorldWeatherLayer={(key) => (worldWeatherLayer = key)}
+    {basemap}
+    onSetBasemap={(key) => (basemap = key)}
+    {showIsobars}
+    onToggleIsobars={() => (showIsobars = !showIsobars)}
+  />
 
-  <div class="flex flex-1 overflow-hidden">
-    <FilterSidebar
-      active={activeCategories}
-      onToggle={toggleCategory}
-      {showWeatherOnMap}
-      onToggleWeatherOnMap={toggleWeatherOnMap}
-      {worldWeatherLayer}
-      onSetWorldWeatherLayer={(key) => (worldWeatherLayer = key)}
-    />
+  {#if selectedEvent}
+    <EventPanel event={selectedEvent} onClose={() => (selectedEvent = null)} />
+  {/if}
 
-    <main class="relative flex-1">
-      <MapView
-        bind:this={mapView}
-        events={displayedEvents}
-        {activeCategories}
-        onSelectEvent={(event) => (selectedEvent = event)}
-        loading={isLoading}
-        error={loadError}
-        onRetry={retryLoad}
-        {showWeatherOnMap}
-        {worldWeatherLayer}
-        {userLocation}
+  <!-- Bottom-left stack, raised clear of the timeline bar. -->
+  <div class="absolute bottom-24 left-3 z-30 flex flex-col items-start gap-2">
+    {#if userLocation}
+      <NearMeCard
+        weather={nearMeWeather}
+        weatherLoading={nearMeWeatherLoading}
+        {nearbyCount}
+        onClear={clearNearMe}
       />
+    {/if}
 
-      {#if selectedEvent}
-        <EventPanel
-          event={selectedEvent}
-          onClose={() => (selectedEvent = null)}
-        />
-      {/if}
-
-      {#if userLocation}
-        <NearMeCard
-          weather={nearMeWeather}
-          weatherLoading={nearMeWeatherLoading}
-          {nearbyCount}
-          onClear={clearNearMe}
-        />
-      {/if}
-    </main>
+    {#if worldWeatherLayer}
+      <WeatherLegend layer={worldWeatherLayer} {basemap} />
+    {/if}
   </div>
 
   <TimelineSlider />

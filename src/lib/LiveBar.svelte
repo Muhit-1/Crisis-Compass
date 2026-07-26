@@ -75,9 +75,7 @@
   }
 </script>
 
-<div
-  class="flex items-center gap-4 border-b border-[#E8E0CC] bg-[#FFFDF8] px-4 py-1.5 text-xs text-[#33394A]"
->
+<div class="glass flex items-center gap-3 rounded-full px-3 py-2 text-xs text-ink">
   <!-- Live alert ticker -->
   <button
     type="button"
@@ -86,14 +84,14 @@
     onclick={() => activeTickerEvent && onJumpToEvent(activeTickerEvent)}
     title={activeTickerEvent ? 'Jump to this event on the map' : undefined}
   >
-    <span class="flex items-center gap-1 text-[#C97064]">
+    <span class="flex shrink-0 items-center gap-1 text-sev-high">
       <span class="relative flex h-1.5 w-1.5">
         <span
-          class="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C97064] opacity-60"
+          class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sev-high opacity-60"
         ></span>
-        <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#C97064]"></span>
+        <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-sev-high"></span>
       </span>
-      <span class="font-semibold tracking-wide uppercase">Live</span>
+      <span class="text-[10px] font-semibold tracking-wider uppercase">Live</span>
     </span>
 
     {#if activeTickerEvent}
@@ -107,33 +105,33 @@
         <span class="truncate hover:underline">{activeTickerEvent.title}</span>
       </span>
     {:else if eventsStore.loading}
-      <span class="text-[#8A8473]">Loading recent activity…</span>
+      <span class="text-muted">Loading recent activity…</span>
     {:else}
-      <span class="text-[#8A8473]">No recent events to show.</span>
+      <span class="text-muted">No recent events to show.</span>
     {/if}
   </button>
 
   <!-- Per-category stat chips -->
   {#if categoryCounts.length > 0}
-    <div class="hidden items-center gap-3 overflow-x-auto md:flex">
+    <div class="hidden shrink-0 items-center gap-2.5 overflow-x-auto lg:flex">
       {#each categoryCounts as entry (entry.style.id)}
         <span class="flex items-center gap-1 whitespace-nowrap" title={entry.style.title}>
           <span style={`color:${entry.style.color}`}><Icon name={entry.style.iconName} size={13} /></span>
-          <span class="font-medium">{entry.count}</span>
+          <span class="font-medium tabular-nums">{entry.count}</span>
         </span>
       {/each}
     </div>
   {/if}
 
   <!-- Refresh status / manual refresh -->
-  <div class="flex shrink-0 items-center gap-2 text-[#8A8473]">
-    <span class="hidden sm:inline">Updated {relativeTime(eventsStore.lastUpdated)}</span>
+  <div class="flex shrink-0 items-center gap-1.5 text-muted">
+    <span class="hidden text-[11px] xl:inline">Updated {relativeTime(eventsStore.lastUpdated)}</span>
     <button
       type="button"
       onclick={handleManualRefresh}
       aria-label="Refresh now"
       title="Refresh now"
-      class="rounded p-1 text-[#8A8473] hover:bg-[#FAF6EC] hover:text-[#33394A]"
+      class="rounded-lg p-1 text-muted transition-colors hover:bg-panel-2 hover:text-ink"
     >
       <Icon name="refresh" size={13} class={refreshing ? 'animate-spin' : ''} />
     </button>

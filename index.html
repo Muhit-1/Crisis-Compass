@@ -4,7 +4,16 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>crisis-compass</title>
+    <meta name="color-scheme" content="dark" />
+    <title>Crisis Compass</title>
+    <style>
+      /* Paint the dark ground before CSS/JS load so there's no white flash. */
+      html,
+      body {
+        margin: 0;
+        background: #070b10;
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>

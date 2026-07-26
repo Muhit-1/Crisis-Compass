@@ -1,1 +1,64 @@
 @import "tailwindcss";
+
+/**
+ * Dark shell palette.
+ *
+ * Weather rasters carry a lot of saturated color, so every piece of app chrome
+ * is a desaturated near-neutral — the data is the only thing allowed to be
+ * bright. Panels are translucent over the map rather than opaque boxes beside
+ * it, which is what makes the map read as the whole page.
+ */
+@theme {
+  /* Surfaces */
+  --color-abyss: #070b10;
+  --color-panel: #111820;
+  --color-panel-2: #1a2430;
+  --color-edge: #26313d;
+
+  /* Text */
+  --color-ink: #e8eef4;
+  --color-muted: #8595a5;
+  --color-faint: #5b6874;
+
+  /* Interactive accent */
+  --color-accent: #4fa8e0;
+
+  /* Severity — brightened from the old cream-background values so they
+     still read at small sizes against a dark map. */
+  --color-sev-low: #5fd68a;
+  --color-sev-med: #ffb443;
+  --color-sev-high: #ff6a5a;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-abyss);
+    color: var(--color-ink);
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+}
+
+@layer components {
+  /**
+   * Shared look for every floating panel: translucent dark glass with a hairline
+   * edge. Defined once so the header, rail, timeline and cards can't drift apart.
+   */
+  .glass {
+    background-color: color-mix(in srgb, var(--color-panel) 82%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-edge) 70%, transparent);
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    box-shadow:
+      0 8px 28px -12px rgba(0, 0, 0, 0.7),
+      0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+  }
+}

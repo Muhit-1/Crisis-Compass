@@ -40,6 +40,9 @@ export type IconName =
   | 'radar'
   | 'pressure'
   | 'cloudsLayer'
+  | 'layers'
+  | 'list'
+  | 'sliders'
 
 
 export const ICONS: Record<IconName, string> = {
@@ -168,5 +171,22 @@ export const ICONS: Record<IconName, string> = {
   `,
   cloudsLayer: `
     <path d="M7 17.5a3.6 3.6 0 0 1-.6-7.1 4.6 4.6 0 0 1 8.9-1.7 3.3 3.3 0 0 1 3.7 3.3 3.1 3.1 0 0 1-.6 5.5H7Z" />
+  `,
+
+  layers: `
+    <path d="M12 3.5 3.5 8l8.5 4.5L20.5 8 12 3.5Z" />
+    <path d="M3.5 12.5 12 17l8.5-4.5" />
+    <path d="M3.5 16.5 12 21l8.5-4.5" />
+  `,
+  list: `
+    <path d="M8.5 7h11M8.5 12h11M8.5 17h11" />
+    <circle cx="4.6" cy="7" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="4.6" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="4.6" cy="17" r="1.1" fill="currentColor" stroke="none" />
+  `,
+  sliders: `
+    <path d="M4 8h9M17 8h3M4 16h3M11 16h9" />
+    <circle cx="15" cy="8" r="2.1" />
+    <circle cx="9" cy="16" r="2.1" />
   `,
 }
