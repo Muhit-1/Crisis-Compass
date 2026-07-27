@@ -1,8 +1,19 @@
 <script lang="ts">
   import { CATEGORY_STYLES } from './categoryStyles'
-  import { WEATHER_LAYERS, type WeatherLayerKey } from './weatherLayers'
+  import { WEATHER_LAYERS, WEATHER_MODELS, type ModelId, type WeatherLayerKey } from './weatherLayers'
+  import { TEMPERATURE_UNITS, WIND_UNITS, unitsStore } from './units.svelte'
+
+  const SHORTCUTS = [
+    { what: 'Play / pause', keys: 'Space' },
+    { what: 'Step ±1 hour', keys: '← →' },
+    { what: 'Step ±1 day', keys: 'Shift + ← →' },
+    { what: 'Jump to now', keys: 'N' },
+    { what: 'Close panel', keys: 'Esc' },
+  ]
   import Icon from './Icon.svelte'
   import type { IconName } from './icons'
+
+  export type Section = 'layers' | 'categories' | 'options'
 
   interface Props {
     active: Set<string>
@@ -23,6 +34,11 @@
     alertError: string | null
     quakesLoading: boolean
     alertsLoading: boolean
+    /** Controlled by App so the map key and the menu can exclude each other. */
+    openSection: Section | null
+    onSetSection: (section: Section | null) => void
+    model: ModelId
+    onSetModel: (model: ModelId) => void
   }
 
   let {
@@ -44,6 +60,10 @@
     alertError,
     quakesLoading,
     alertsLoading,
+    openSection,
+    onSetSection,
+    model,
+    onSetModel,
   }: Props = $props()
 
   /** Right-hand hint on a feed row: count, spinner text, or nothing. */
@@ -63,22 +83,19 @@
   )
 
   /**
-   * The sidebar is now an icon rail pinned to the right edge with a single
-   * flyout panel — the map keeps its full width, and only one section is open
-   * at a time instead of three stacked accordions competing for space.
+   * An icon rail with a single flyout panel — the map keeps its full width,
+   * and only one section is open at a time instead of three stacked accordions
+   * competing for space. Which section is open lives in App, so the map key
+   * can close the menu and vice versa.
    */
-  type Section = 'layers' | 'categories' | 'options'
-
   const RAIL: { id: Section; icon: IconName; label: string }[] = [
     { id: 'layers', icon: 'layers', label: 'Weather layers' },
     { id: 'categories', icon: 'list', label: 'Event categories' },
     { id: 'options', icon: 'sliders', label: 'Options' },
   ]
 
-  let openSection = $state<Section | null>(null)
-
   function toggleSection(section: Section) {
-    openSection = openSection === section ? null : section
+    onSetSection(openSection === section ? null : section)
   }
 
   const allActive = $derived(categories.every((c) => active.has(c.id)))
@@ -111,18 +128,22 @@
   ]
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') openSection = null
+    if (event.key === 'Escape') onSetSection(null)
   }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 <!--
-  Pinned left, with the flyout opening rightward. The event and forecast panels
-  own the top-right corner, so a right-hand rail put the two on top of each
-  other the moment you opened a layer.
+  Pinned to the upper left, with the flyout opening rightward.
+
+  Top-aligned rather than vertically centred: the bottom-left column (ticker,
+  legends, map key) grows upward, and a centred rail sat right in its path —
+  opening the map key covered the menu.
 -->
-<div class="absolute top-1/2 left-3 z-30 flex -translate-y-1/2 items-start gap-2">
+<!-- z-40: above the bottom-left legend stack, so an open menu is never the thing
+     that gets covered. The rail itself sits clear of that stack entirely. -->
+<div class="absolute top-28 left-3 z-40 flex items-start gap-2">
   <!-- Icon rail -->
   <nav class="glass flex flex-col gap-1 rounded-2xl p-1.5">
     {#each RAIL as item (item.id)}
@@ -148,7 +169,7 @@
 
   {#if openSection}
     <div
-      class="glass flex max-h-[70vh] w-60 flex-col overflow-hidden rounded-2xl"
+      class="glass flex max-h-[calc(100vh-10rem)] w-60 flex-col overflow-hidden rounded-2xl"
     >
       <div class="flex items-center justify-between px-3 pt-2.5 pb-1.5">
         <h2 class="text-[12px] font-semibold tracking-wider text-muted uppercase">
@@ -156,7 +177,7 @@
         </h2>
         <button
           type="button"
-          onclick={() => (openSection = null)}
+          onclick={() => onSetSection(null)}
           class="text-muted transition-colors hover:text-ink"
           aria-label="Close panel"
         >
@@ -352,6 +373,86 @@
           <p class="mt-1 px-2 text-[12px] leading-relaxed text-faint">
             Adds live conditions to each marker's tooltip. Off by default to limit API calls.
           </p>
+
+          <div class="mt-3 border-t border-edge/60 pt-2">
+            <p class="mb-1 px-2 text-[11px] font-semibold tracking-wider text-faint uppercase">
+              Forecast model
+            </p>
+            <div class="flex flex-col gap-0.5">
+              {#each WEATHER_MODELS as option (option.id)}
+                <button
+                  type="button"
+                  onclick={() => onSetModel(option.id)}
+                  class={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+                    model === option.id
+                      ? 'bg-accent/20 text-accent'
+                      : 'text-ink hover:bg-panel-2'
+                  }`}
+                >
+                  <span class="min-w-0 flex-1 truncate">{option.label}</span>
+                  <span class="shrink-0 text-[11px] text-faint">{option.hint}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="mt-3 border-t border-edge/60 pt-2">
+            <p class="mb-1 px-2 text-[11px] font-semibold tracking-wider text-faint uppercase">
+              Units
+            </p>
+
+            <div class="mb-1.5 flex items-center gap-2 px-2">
+              <span class="w-20 shrink-0 text-[12px] text-muted">Temperature</span>
+              <div class="flex flex-1 gap-1 rounded-lg bg-panel-2/70 p-0.5">
+                {#each TEMPERATURE_UNITS as option (option.key)}
+                  <button
+                    type="button"
+                    onclick={() => unitsStore.setTemperature(option.key)}
+                    class={`flex-1 rounded-md px-1.5 py-1 text-[12px] font-medium transition-colors ${
+                      unitsStore.temperature === option.key
+                        ? 'bg-accent/25 text-accent'
+                        : 'text-muted hover:text-ink'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 px-2">
+              <span class="w-20 shrink-0 text-[12px] text-muted">Wind</span>
+              <div class="flex flex-1 gap-1 rounded-lg bg-panel-2/70 p-0.5">
+                {#each WIND_UNITS as option (option.key)}
+                  <button
+                    type="button"
+                    onclick={() => unitsStore.setWind(option.key)}
+                    class={`flex-1 rounded-md px-1.5 py-1 text-[12px] font-medium transition-colors ${
+                      unitsStore.wind === option.key
+                        ? 'bg-accent/25 text-accent'
+                        : 'text-muted hover:text-ink'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3 border-t border-edge/60 pt-2">
+            <p class="mb-1 px-2 text-[11px] font-semibold tracking-wider text-faint uppercase">
+              Shortcuts
+            </p>
+            <dl class="space-y-0.5 px-2 text-[12px]">
+              {#each SHORTCUTS as row (row.keys)}
+                <div class="flex items-center justify-between gap-2">
+                  <dt class="text-muted">{row.what}</dt>
+                  <dd class="shrink-0 font-mono text-[11px] text-faint">{row.keys}</dd>
+                </div>
+              {/each}
+            </dl>
+          </div>
         {/if}
       </div>
     </div>

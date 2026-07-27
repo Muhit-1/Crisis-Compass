@@ -3,6 +3,7 @@
   import type { ForecastHour, PointForecast } from '../types/weather'
   import { compassPoint, describeWeatherCode } from './weatherCodes'
   import Icon from './Icon.svelte'
+  import { fromCelsius, fromKmh, TEMPERATURE_SUFFIX, WIND_SUFFIX, unitsStore } from './units.svelte'
 
   interface Props {
     lat: number
@@ -208,12 +209,12 @@
       <div class="min-w-0">
         <div class="flex items-baseline gap-1.5">
           <span class="text-xl leading-none font-semibold text-ink tabular-nums">
-            {Math.round(current.temperatureC)}°
+            {Math.round(fromCelsius(current.temperatureC, unitsStore.temperature))}°
           </span>
           <span class="truncate text-[12px] text-muted">{info.label}</span>
         </div>
         <p class="mt-0.5 text-[12px] text-faint tabular-nums">
-          {localLabel} local · feels {Math.round(current.feelsLikeC)}°
+          {localLabel} local · feels {Math.round(fromCelsius(current.feelsLikeC, unitsStore.temperature))}°
         </p>
       </div>
     </div>
@@ -221,8 +222,8 @@
     <div class="mt-2 grid grid-cols-3 gap-x-2 gap-y-1 text-[12px] text-ink">
       <div class="flex items-center gap-1">
         <Icon name="wind" size={12} class="text-muted" />
-        <span class="tabular-nums">{Math.round(current.windSpeedKph)}</span>
-        <span class="text-faint">{compassPoint(current.windDirectionDeg)}</span>
+        <span class="tabular-nums">{Math.round(fromKmh(current.windSpeedKph, unitsStore.wind))}</span>
+        <span class="text-faint">{compassPoint(current.windDirectionDeg)} {WIND_SUFFIX[unitsStore.wind]}</span>
       </div>
       <div class="flex items-center gap-1">
         <Icon name="rain" size={12} class="text-muted" />
@@ -305,7 +306,7 @@
 
       <!-- Range labels -->
       <text x={PAD} y={TEMP_TOP - 5} font-size="9" fill="#8595A5">
-        {Math.round(tempRange.max)}{forecast.units.temperature}
+        {Math.round(fromCelsius(tempRange.max, unitsStore.temperature))}{TEMPERATURE_SUFFIX[unitsStore.temperature]}
       </text>
       <text x={W - PAD} y={TEMP_TOP - 5} font-size="9" fill="#8595A5" text-anchor="end">
         max {Math.round(precipMax * 10) / 10}{forecast.units.precipitation}/h

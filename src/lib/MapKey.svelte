@@ -7,11 +7,12 @@
     showQuakes: boolean
     showAlerts: boolean
     activeCategories: Set<string>
+    /** Controlled by App: expanding this collapses the menu, and vice versa. */
+    open: boolean
+    onToggle: () => void
   }
 
-  let { showQuakes, showAlerts, activeCategories }: Props = $props()
-
-  let open = $state(true)
+  let { showQuakes, showAlerts, activeCategories, open, onToggle }: Props = $props()
 
   /**
    * What every mark on the map means.
@@ -55,7 +56,7 @@
   <div class="glass w-60 max-w-[calc(100vw-1.5rem)] rounded-xl">
     <button
       type="button"
-      onclick={() => (open = !open)}
+      onclick={onToggle}
       class="flex w-full items-center justify-between px-3 py-2 text-left"
       aria-expanded={open}
     >

@@ -1,7 +1,14 @@
 import { getEvents } from './api/eonet'
 import type { EonetEvent } from '../types/eonet'
 import { eventsStore } from './eventsStore.svelte'
-import { HISTORY_DAYS, loadRunIndex, snapToValidTime, type RunIndex } from './weatherLayers'
+import {
+  DEFAULT_MODEL,
+  HISTORY_DAYS,
+  loadRunIndex,
+  snapToValidTime,
+  type ModelId,
+  type RunIndex,
+} from './weatherLayers'
 
 /**
  * How much EONET history to pull when the user scrubs into the past.
@@ -60,6 +67,7 @@ class TimelineStore {
   /** Metadata for the newest model run — resolves the forecast horizon. */
   run = $state<RunIndex | null>(null)
   runError = $state<string | null>(null)
+  model = $state<ModelId>(DEFAULT_MODEL)
 
   playing = $state(false)
 
@@ -131,15 +139,35 @@ class TimelineStore {
 
   async #loadRun(): Promise<void> {
     this.runError = null
+    const requested = this.model
     try {
-      this.run = await loadRunIndex()
+      const index = await loadRunIndex(requested)
+      // A slow switch must not clobber a newer one.
+      if (this.model !== requested) return
+      this.run = index
     } catch (err) {
+      if (this.model !== requested) return
       this.runError = err instanceof Error ? err.message : 'Failed to load the weather model index'
     }
   }
 
   retryRun(): void {
     void this.#loadRun()
+  }
+
+  /**
+   * Switch forecast model.
+   *
+   * Horizons differ a lot — ICON reaches 7.5 days, ECMWF 15, ARPEGE 4 — so the
+   * selected hour is re-clamped once the new run resolves rather than left
+   * pointing past the end of a shorter forecast.
+   */
+  setModel(model: ModelId): void {
+    if (model === this.model) return
+    this.pause()
+    this.model = model
+    this.run = null
+    void this.#loadRun().then(() => this.setOffset(this.hourOffset))
   }
 
   /**

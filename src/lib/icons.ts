@@ -43,6 +43,7 @@ export type IconName =
   | 'layers'
   | 'list'
   | 'sliders'
+  | 'github'
 
 
 export const ICONS: Record<IconName, string> = {
@@ -183,6 +184,9 @@ export const ICONS: Record<IconName, string> = {
     <circle cx="4.6" cy="7" r="1.1" fill="currentColor" stroke="none" />
     <circle cx="4.6" cy="12" r="1.1" fill="currentColor" stroke="none" />
     <circle cx="4.6" cy="17" r="1.1" fill="currentColor" stroke="none" />
+  `,
+  github: `
+    <path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.4c0-1-.1-1.4-.6-1.9 2.9-.3 5.6-1.4 5.6-6.1a4.7 4.7 0 0 0-1.3-3.3 4.4 4.4 0 0 0-.1-3.3s-1.1-.3-3.5 1.3a12 12 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.4 4.4 0 0 0-.1 3.3A4.7 4.7 0 0 0 4 9.7c0 4.7 2.7 5.8 5.6 6.1-.4.4-.6.9-.6 1.9V21" />
   `,
   sliders: `
     <path d="M4 8h9M17 8h3M4 16h3M11 16h9" />

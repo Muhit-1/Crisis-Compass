@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { WeatherSnapshot } from '../types/weather'
   import Icon from './Icon.svelte'
+  import { fromCelsius, fromKmh, TEMPERATURE_SUFFIX, WIND_SUFFIX, unitsStore } from './units.svelte'
 
   interface Props {
     weather: WeatherSnapshot | null
@@ -39,12 +40,12 @@
     <div class="mt-2 grid grid-cols-2 gap-y-1.5 gap-x-3 text-[13px] text-ink">
       <div class="flex items-center gap-1.5">
         <Icon name="thermometer" size={13} class="text-muted" />
-        {Math.round(weather.temperatureC)}°C
-        <span class="text-muted">(feels {Math.round(weather.feelsLikeC)}°)</span>
+        {Math.round(fromCelsius(weather.temperatureC, unitsStore.temperature))}{TEMPERATURE_SUFFIX[unitsStore.temperature]}
+        <span class="text-muted">(feels {Math.round(fromCelsius(weather.feelsLikeC, unitsStore.temperature))}°)</span>
       </div>
       <div class="flex items-center gap-1.5">
         <Icon name="wind" size={13} class="text-muted" />
-        {Math.round(weather.windSpeedKph)} km/h
+        {Math.round(fromKmh(weather.windSpeedKph, unitsStore.wind))} {WIND_SUFFIX[unitsStore.wind]}
       </div>
       <div class="flex items-center gap-1.5">
         <Icon name="humidity" size={13} class="text-muted" />

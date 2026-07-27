@@ -15,6 +15,19 @@ import type { ExpressionSpecification } from 'maplibre-gl'
  */
 export type BasemapKey = 'simple' | 'detailed'
 
+/**
+ * Opening view.
+ *
+ * Deliberately regional rather than the whole globe: at world zoom the hazard
+ * feeds put several hundred circles on screen at once, which reads as noise
+ * before the viewer knows what any of them mean. Starting zoomed in shows a
+ * legible handful and invites zooming out.
+ */
+export const DEFAULT_VIEW = {
+  center: [88, 20] as [number, number],
+  zoom: 4,
+}
+
 /** Layer ids, shared between the style definition and the visibility toggle. */
 export const BASEMAP_LAYERS = {
   background: 'background',

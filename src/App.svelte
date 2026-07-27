@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack } from "svelte";
   import MapView from "./lib/MapView.svelte";
-  import FilterSidebar from "./lib/FilterSidebar.svelte";
+  import FilterSidebar, { type Section } from "./lib/FilterSidebar.svelte";
   import EventPanel from "./lib/EventPanel.svelte";
   import LiveBar from "./lib/LiveBar.svelte";
   import TimelineSlider from "./lib/TimelineSlider.svelte";
@@ -18,6 +18,9 @@
   import HazardPanel from "./lib/HazardPanel.svelte";
   import MapKey from "./lib/MapKey.svelte";
   import StatusChips from "./lib/StatusChips.svelte";
+  import Credit from "./lib/Credit.svelte";
+  import { readViewState, writeViewState } from "./lib/urlState";
+  import { unitsStore } from "./lib/units.svelte";
   import { hazardsStore } from "./lib/hazardsStore.svelte";
   import type { GdacsAlert, Quake } from "./types/hazards";
   import {
@@ -100,6 +103,23 @@
   // No overlay by default — the plain political map is the resting state.
   let worldWeatherLayer = $state<WeatherLayerKey | null>(null);
   let showIsobars = $state(false);
+
+  /**
+   * The menu flyout and the expanded map key both grow into the same left-hand
+   * column, so they take turns rather than stacking on top of each other.
+   */
+  let openSection = $state<Section | null>(null);
+  let mapKeyOpen = $state(true);
+
+  function setSection(section: Section | null) {
+    openSection = section;
+    if (section) mapKeyOpen = false;
+  }
+
+  function toggleMapKey() {
+    mapKeyOpen = !mapKeyOpen;
+    if (mapKeyOpen) openSection = null;
+  }
 
   /**
    * The base map follows the data rather than being chosen separately.
@@ -218,9 +238,82 @@
     mapView?.flyTo(event);
   }
 
+  /**
+   * Keyboard control of the timeline.
+   *
+   * Skipped whenever focus is in a form control, so arrow keys still drag the
+   * scrubber and space still toggles a checkbox rather than the playback.
+   */
+  function handleKeydown(event: KeyboardEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    switch (event.key) {
+      case "ArrowLeft":
+        event.preventDefault();
+        timelineStore.step(event.shiftKey ? -24 : -1);
+        break;
+      case "ArrowRight":
+        event.preventDefault();
+        timelineStore.step(event.shiftKey ? 24 : 1);
+        break;
+      case "n":
+      case "N":
+        timelineStore.resetToLive();
+        break;
+      case "Escape":
+        clearPanels();
+        break;
+    }
+  }
+
+  /**
+   * Mirror the view into the query string so a link reproduces it exactly.
+   * Applied once on mount, then written back (replaceState) as things change.
+   */
+  function applyUrlState() {
+    const s = readViewState();
+    if (s.layer !== undefined) worldWeatherLayer = s.layer;
+    if (s.isobars !== undefined) showIsobars = s.isobars;
+    if (s.quakes !== undefined) showQuakes = s.quakes;
+    if (s.alerts !== undefined) showAlerts = s.alerts;
+    if (s.categories) activeCategories = new Set(s.categories);
+    if (s.model) timelineStore.setModel(s.model);
+    if (s.temperature) unitsStore.setTemperature(s.temperature);
+    if (s.wind) unitsStore.setWind(s.wind);
+    if (s.hourOffset !== undefined) pendingHourOffset = s.hourOffset;
+    if (s.center) mapView?.jumpTo(s.center, s.zoom);
+  }
+
+  /** Held until the run index resolves, since the offset is clamped to it. */
+  let pendingHourOffset: number | null = null;
+
+  $effect(() => {
+    if (pendingHourOffset === null || !timelineStore.run) return;
+    timelineStore.setOffset(pendingHourOffset);
+    pendingHourOffset = null;
+  });
+
   onMount(() => {
     eventsStore.startAutoRefresh();
     timelineStore.startClock();
+    applyUrlState();
+  });
+
+  $effect(() => {
+    const state = {
+      layer: worldWeatherLayer,
+      isobars: showIsobars,
+      quakes: showQuakes,
+      alerts: showAlerts,
+      categories: [...activeCategories],
+      hourOffset: timelineStore.hourOffset,
+      model: timelineStore.model,
+      temperature: unitsStore.temperature,
+      wind: unitsStore.wind,
+    };
+    untrack(() => writeViewState(state));
   });
 
   onDestroy(() => {
@@ -229,6 +322,8 @@
     hazardsStore.stopAll();
   });
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <!--
   Full-bleed shell: the map is the page, and every control floats over it.
@@ -325,6 +420,10 @@
     alertError={hazardsStore.alertsError}
     quakesLoading={hazardsStore.quakesLoading}
     alertsLoading={hazardsStore.alertsLoading}
+    {openSection}
+    onSetSection={setSection}
+    model={timelineStore.model}
+    onSetModel={(m) => timelineStore.setModel(m)}
   />
 
   {#if selectedEvent}
@@ -348,7 +447,7 @@
     with the live ticker above it.
   -->
   <div
-    class="pointer-events-none absolute bottom-24 left-3 z-30 flex max-h-[calc(100vh-14rem)] flex-col items-start gap-2 overflow-y-auto"
+    class="pointer-events-none absolute bottom-20 left-3 z-30 flex max-h-[calc(100vh-12rem)] flex-col items-start gap-2 overflow-y-auto"
   >
     <div class="pointer-events-auto">
       <LiveBar onJumpToEvent={jumpToEvent} />
@@ -372,9 +471,17 @@
     {/if}
 
     <div class="pointer-events-auto">
-      <MapKey {showQuakes} {showAlerts} {activeCategories} />
+      <MapKey
+        {showQuakes}
+        {showAlerts}
+        {activeCategories}
+        open={mapKeyOpen}
+        onToggle={toggleMapKey}
+      />
     </div>
   </div>
 
   <TimelineSlider />
+
+  <Credit />
 </div>

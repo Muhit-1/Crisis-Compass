@@ -27,13 +27,45 @@ import type { IconName } from './icons'
  */
 
 const TILE_BASE = 'https://map-tiles.open-meteo.com/data_spatial'
-const MODEL = 'dwd_icon'
 const RUN_INTERVAL_HOURS = 6
+
+/**
+ * Global models that publish every variable this app draws.
+ *
+ * Verified against each model's live `latest.json`: GFS, UK Met Office and
+ * JMA were dropped because they omit variables the layer list depends on
+ * (10 m wind components, gusts or CAPE), which would leave dead entries in the
+ * picker. Horizons differ a lot — the timeline reads its bounds from whichever
+ * run is loaded, so switching model reshapes the scrubber automatically.
+ */
+export type ModelId =
+  | 'dwd_icon'
+  | 'ecmwf_ifs025'
+  | 'meteofrance_arpege_world025'
+  | 'cma_grapes_global'
+
+export interface WeatherModel {
+  id: ModelId
+  label: string
+  hint: string
+}
+
+export const WEATHER_MODELS: WeatherModel[] = [
+  { id: 'dwd_icon', label: 'ICON', hint: 'DWD · 11 km · 7.5 d' },
+  { id: 'ecmwf_ifs025', label: 'ECMWF', hint: 'IFS · 25 km · 15 d' },
+  { id: 'meteofrance_arpege_world025', label: 'ARPEGE', hint: 'Météo-France · 4 d' },
+  { id: 'cma_grapes_global', label: 'GRAPES', hint: 'CMA · 5 d' },
+]
+
+export const DEFAULT_MODEL: ModelId = 'dwd_icon'
 
 /** How far back the tile archive is retained. Verified empirically — day -7 resolves, day -8 is gone. */
 export const HISTORY_DAYS = 7
 
-export const WEATHER_ATTRIBUTION = 'Weather &copy; Open-Meteo (DWD ICON)'
+export function weatherAttribution(model: ModelId): string {
+  const label = WEATHER_MODELS.find((m) => m.id === model)?.label ?? model
+  return `Weather &copy; Open-Meteo (${label})`
+}
 
 export type WeatherLayerKey = 'wind' | 'temperature' | 'rain' | 'clouds' | 'gusts' | 'storm'
 
@@ -52,41 +84,104 @@ export interface WeatherLayerDef {
   hasDirection?: boolean
   /** Shown under the layer name in the picker. */
   hint?: string
+  /**
+   * Variable name in the point-forecast API, which differs from the tile
+   * variable for wind: tiles derive speed from u/v components, the API
+   * exposes wind_speed_10m directly.
+   */
+  apiVariable: string
+  /** Unit the TILE values arrive in, so grid labels can be converted. */
+  nativeUnit: 'celsius' | 'ms' | 'none'
+  /** Appended to the on-map value labels, e.g. "27°". Kept very short. */
+  valueSuffix: string
+  /** Decimal places for those labels. */
+  valueDecimals: number
+  /**
+   * Suppress labels below this value. Precipitation is zero across most of the
+   * map, and a field of "0"s is pure noise.
+   */
+  minLabelValue?: number
 }
 
 export const WEATHER_LAYERS: WeatherLayerDef[] = [
   {
     key: 'wind',
+    nativeUnit: 'ms',
+    apiVariable: 'wind_speed_10m',
     label: 'Wind',
     iconName: 'wind',
     variable: 'wind_u_component_10m',
     hasDirection: true,
     hint: 'Speed at 10 m',
+    valueSuffix: '',
+    valueDecimals: 0,
   },
   {
     key: 'temperature',
+    nativeUnit: 'celsius',
+    apiVariable: 'temperature_2m',
     label: 'Temperature',
     iconName: 'thermometer',
     variable: 'temperature_2m',
     hint: 'At 2 m',
+    valueSuffix: '°',
+    valueDecimals: 0,
   },
-  { key: 'rain', label: 'Rain', iconName: 'rain', variable: 'precipitation' },
-  { key: 'clouds', label: 'Clouds', iconName: 'cloudsLayer', variable: 'cloud_cover' },
+  {
+    key: 'rain',
+    nativeUnit: 'none',
+    apiVariable: 'precipitation',
+    label: 'Rain',
+    iconName: 'rain',
+    variable: 'precipitation',
+    valueSuffix: '',
+    valueDecimals: 1,
+    minLabelValue: 0.2,
+  },
+  {
+    key: 'clouds',
+    nativeUnit: 'none',
+    apiVariable: 'cloud_cover',
+    label: 'Clouds',
+    iconName: 'cloudsLayer',
+    variable: 'cloud_cover',
+    valueSuffix: '%',
+    valueDecimals: 0,
+  },
   {
     key: 'gusts',
+    nativeUnit: 'ms',
+    apiVariable: 'wind_gusts_10m',
     label: 'Gusts',
     iconName: 'wind',
     variable: 'wind_gusts_10m',
     hint: 'Peak wind',
+    valueSuffix: '',
+    valueDecimals: 0,
   },
   {
     key: 'storm',
+    nativeUnit: 'none',
+    apiVariable: 'cape',
     label: 'Storm energy',
     iconName: 'severeStorms',
     variable: 'cape',
     hint: 'CAPE — thunderstorm potential',
+    valueSuffix: '',
+    valueDecimals: 0,
   },
 ]
+
+/**
+ * Two tiers of on-map value labels.
+ *
+ * City labels come first, because named places are what makes a number
+ * meaningful — "Dhaka 27°" reads instantly where a bare 27 floating over the
+ * delta does not. The raw model grid is only unlocked once zoomed far enough
+ * in that the points are spaced out, since at low zoom it's a wall of digits.
+ */
+export const CITY_LABEL_MINZOOM = 4
+export const GRID_LABEL_MINZOOM = 7
 
 const LAYER_BY_KEY = new Map(WEATHER_LAYERS.map((l) => [l.key, l]))
 
@@ -103,6 +198,8 @@ export const ISOBAR_INTERVAL_HPA = 4
 
 /** Resolved metadata for the newest completed model run. */
 export interface RunIndex {
+  /** Which model this run came from — every tile URL is built from it. */
+  model: ModelId
   /** When the run was initialised — also the first hour it can describe. */
   referenceTime: Date
   /** Every hour this run forecasts, ascending. */
@@ -144,8 +241,8 @@ export async function ensureOmProtocolRegistered(): Promise<void> {
  * Fetch the index for the newest completed run. Called once at startup; every
  * tile URL afterwards is derived from the result without further requests.
  */
-export async function loadRunIndex(): Promise<RunIndex> {
-  const url = `${TILE_BASE}/${MODEL}/latest.json`
+export async function loadRunIndex(model: ModelId = DEFAULT_MODEL): Promise<RunIndex> {
+  const url = `${TILE_BASE}/${model}/latest.json`
 
   let res: Response
   try {
@@ -165,6 +262,7 @@ export async function loadRunIndex(): Promise<RunIndex> {
   }
 
   return {
+    model,
     referenceTime: new Date(index.reference_time),
     validTimes: index.valid_times.map((t) => new Date(t)),
     variables: index.variables ?? [],
@@ -187,7 +285,7 @@ export function hasVariable(run: RunIndex, variable: string): boolean {
 
 /** Human-readable explanation for a layer the current run can't serve. */
 export function missingVariableMessage(variable: string): string {
-  return `"${variable}" isn't published in the current ${MODEL} run.`
+  return `"${variable}" isn't published in the current model run.`
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -239,13 +337,14 @@ function omFileUrl(variable: string, time: Date, run: RunIndex): string {
   const snapped = snapToValidTime(time, run)
   const folder = runFolderFor(snapped, run)
 
+  const model = run.model
   const datePart = `${folder.getUTCFullYear()}/${pad(folder.getUTCMonth() + 1)}/${pad(folder.getUTCDate())}`
   const runPart = `${pad(folder.getUTCHours())}00Z`
   const validPart =
     `${snapped.getUTCFullYear()}-${pad(snapped.getUTCMonth() + 1)}-${pad(snapped.getUTCDate())}` +
     `T${pad(snapped.getUTCHours())}00`
 
-  return `${TILE_BASE}/${MODEL}/${datePart}/${runPart}/${validPart}.om?variable=${variable}`
+  return `${TILE_BASE}/${model}/${datePart}/${runPart}/${validPart}.om?variable=${variable}`
 }
 
 export interface TileUrlOptions {
@@ -270,6 +369,19 @@ export function omRasterUrl(
  */
 export function omArrowsUrl(key: WeatherLayerKey, time: Date, run: RunIndex): string {
   return `om://${omFileUrl(weatherLayer(key).variable, time, run)}&arrows=true`
+}
+
+/**
+ * Vector-tile URL carrying one point per model grid cell (`grid` source-layer,
+ * `value` property, plus `direction` where the variable has one).
+ *
+ * This is what makes the "numbers scattered across the map" reading possible —
+ * the same trick Windy uses to show a value at every town — except the points
+ * are the model's own grid rather than a city list, so no extra data source is
+ * involved and the values are exactly what the raster underneath is painting.
+ */
+export function omGridUrl(key: WeatherLayerKey, time: Date, run: RunIndex): string {
+  return `om://${omFileUrl(weatherLayer(key).variable, time, run)}&grid=true`
 }
 
 /** Vector-tile URL carrying pressure isolines (`contours` source-layer, `level` property). */

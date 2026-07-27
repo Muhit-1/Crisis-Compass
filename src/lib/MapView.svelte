@@ -20,6 +20,16 @@
   import { SEVERITY_COLORS } from "./severity";
   import { ICONS, type IconName } from "./icons";
   import { getCurrentWeather } from "./api/weather";
+  import { getCityValues, MAX_CITY_LABELS } from "./api/cityValues";
+  import { CITIES, type City } from "./data/cities";
+  import {
+    fromCelsius,
+    fromKmh,
+    TEMPERATURE_SUFFIX,
+    WIND_SUFFIX,
+    tileValueExpression,
+    unitsStore,
+  } from "./units.svelte";
   import type { WeatherSnapshot } from "../types/weather";
 
   import {
@@ -28,10 +38,13 @@
     ISOBAR_VARIABLE,
     missingVariableMessage,
     omArrowsUrl,
+    omGridUrl,
     omIsobarUrl,
     omRasterUrl,
+    CITY_LABEL_MINZOOM,
+    GRID_LABEL_MINZOOM,
     weatherLayer,
-    WEATHER_ATTRIBUTION,
+    weatherAttribution,
     type RunIndex,
     type WeatherLayerKey,
   } from "./weatherLayers";
@@ -41,6 +54,7 @@
     CARTO_ATTRIBUTION,
     cartoTiles,
     countryFillColor,
+    DEFAULT_VIEW,
     GLYPHS_URL,
     LABEL_FONT,
     OVERLAY_ANCHOR,
@@ -118,6 +132,10 @@
   const ISOBAR_SOURCE = "weather-isobars";
   const ISOBAR_LAYER = "weather-isobars-layer";
   const ISOBAR_LABEL_LAYER = "weather-isobars-label";
+  const GRID_SOURCE = "weather-grid";
+  const GRID_LAYER = "weather-grid-labels";
+  const CITY_SOURCE = "city-values";
+  const CITY_LAYER = "city-values-labels";
   const QUAKE_SOURCE = "usgs-quakes";
   const QUAKE_LAYER = "usgs-quakes-layer";
   const ALERT_SOURCE = "gdacs-alerts";
@@ -509,6 +527,8 @@
       if (e.sourceId === EVENTS_SOURCE) scheduleClusterSync();
     });
     map.on("moveend", scheduleClusterSync);
+    // City labels depend on what's on screen, so they follow the viewport.
+    map.on("moveend", scheduleCityRefresh);
   }
 
   // =========================
@@ -655,6 +675,132 @@
   }
 
   // =========================
+  // City value labels
+  // =========================
+
+  let cityRequestId = 0;
+  let cityRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Cities inside the current viewport, largest first, capped. */
+  function citiesInView(): City[] {
+    if (!map) return [];
+    const bounds = map.getBounds();
+    const south = bounds.getSouth();
+    const north = bounds.getNorth();
+    const west = bounds.getWest();
+    const east = bounds.getEast();
+
+    const picked: City[] = [];
+    for (const city of CITIES) {
+      if (city.la < south || city.la > north) continue;
+      // With world copies the bounds can run past ±180, so test the city at
+      // each equivalent longitude rather than assuming a normalised range.
+      const inLon =
+        (city.lo >= west && city.lo <= east) ||
+        (city.lo + 360 >= west && city.lo + 360 <= east) ||
+        (city.lo - 360 >= west && city.lo - 360 <= east);
+      if (!inLon) continue;
+      picked.push(city);
+      if (picked.length >= MAX_CITY_LABELS) break; // CITIES is population-sorted
+    }
+    return picked;
+  }
+
+  function clearCityLabels() {
+    const source = map?.getSource(CITY_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    source?.setData({ type: "FeatureCollection", features: [] });
+  }
+
+  /**
+   * Fetch and draw values for the cities on screen.
+   *
+   * Guarded by a request id because panning fires these faster than the
+   * network answers, and a stale response must not overwrite a fresh one.
+   */
+  async function refreshCityLabels() {
+    if (!map || !mapLoaded) return;
+
+    const key = worldWeatherLayer;
+    if (!key || map.getZoom() < CITY_LABEL_MINZOOM) {
+      clearCityLabels();
+      return;
+    }
+
+    const cities = citiesInView();
+    if (cities.length === 0) {
+      clearCityLabels();
+      return;
+    }
+
+    const def = weatherLayer(key);
+    const id = ++cityRequestId;
+
+    try {
+      const values = await getCityValues(cities, def.apiVariable, weatherTime, {
+        temperature: unitsStore.temperature,
+        wind: unitsStore.wind,
+      });
+      if (id !== cityRequestId || !map) return;
+
+      const source = map.getSource(CITY_SOURCE) as maplibregl.GeoJSONSource | undefined;
+      source?.setData({
+        type: "FeatureCollection",
+        features: values
+          .filter((v) => def.minLabelValue === undefined || v.value >= def.minLabelValue)
+          .map(({ city, value }) => ({
+            type: "Feature" as const,
+            geometry: { type: "Point" as const, coordinates: [city.lo, city.la] },
+            properties: {
+              name: city.n,
+              reading: `${value.toFixed(def.valueDecimals)}${def.valueSuffix}`,
+            },
+          })),
+      });
+    } catch {
+      if (id === cityRequestId) clearCityLabels();
+    }
+  }
+
+  function scheduleCityRefresh() {
+    if (cityRefreshTimer) clearTimeout(cityRefreshTimer);
+    cityRefreshTimer = setTimeout(() => {
+      cityRefreshTimer = null;
+      void refreshCityLabels();
+    }, 350);
+  }
+
+  function addCityLayer() {
+    if (!map) return;
+    map.addSource(CITY_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: CITY_LAYER,
+      type: "symbol",
+      source: CITY_SOURCE,
+      minzoom: CITY_LABEL_MINZOOM,
+      layout: {
+        // Name above the reading, the way every weather map does it — the
+        // place name is what makes the number mean something.
+        "text-field": ["format", ["get", "name"], { "font-scale": 0.85 }, "\n", {}, ["get", "reading"], { "font-scale": 1.15 }],
+        "text-font": LABEL_FONT,
+        "text-size": 13,
+        "text-line-height": 1.1,
+        "text-anchor": "top",
+        "text-offset": [0, 0.6],
+        "text-allow-overlap": false,
+        "text-padding": 8,
+      },
+      paint: {
+        "text-color": "#FFFFFF",
+        "text-halo-color": "rgba(7,11,16,0.9)",
+        "text-halo-width": 1.6,
+      },
+    });
+  }
+
+  // =========================
   // Forecast pick marker
   // =========================
 
@@ -714,6 +860,7 @@
     [WEATHER_SOURCE]: null,
     [ARROWS_SOURCE]: null,
     [ISOBAR_SOURCE]: null,
+    [GRID_SOURCE]: null,
   };
 
   function removeOverlay(sourceId: string, ...layerIds: string[]) {
@@ -733,7 +880,13 @@
    */
   function restackOverlays() {
     if (!map) return;
-    for (const id of [WEATHER_LAYER, ARROWS_LAYER, ISOBAR_LAYER, ISOBAR_LABEL_LAYER]) {
+    for (const id of [
+      WEATHER_LAYER,
+      ARROWS_LAYER,
+      ISOBAR_LAYER,
+      ISOBAR_LABEL_LAYER,
+      GRID_LAYER,
+    ]) {
       if (map.getLayer(id)) map.moveLayer(id, OVERLAY_ANCHOR);
     }
   }
@@ -771,6 +924,7 @@
 
     removeOverlay(WEATHER_SOURCE, WEATHER_LAYER);
     removeOverlay(ARROWS_SOURCE, ARROWS_LAYER);
+    removeOverlay(GRID_SOURCE, GRID_LAYER);
     weatherLayerError = null;
 
     const key = worldWeatherLayer;
@@ -793,7 +947,7 @@
       url,
       tileSize: 256,
       maxzoom: 12,
-      attribution: WEATHER_ATTRIBUTION,
+      attribution: weatherAttribution(runIndex.model),
     });
     map.addLayer(
       {
@@ -828,6 +982,60 @@
       );
       appliedUrls[ARROWS_SOURCE] = arrowsUrl;
     }
+
+    // Per-gridpoint value labels — the "numbers all over the map" reading.
+    // Held back until GRID_LABEL_MINZOOM; at world zoom the grid is far denser
+    // than the screen and every label would collide away anyway.
+    const gridUrl = omGridUrl(key, weatherTime, runIndex);
+    map.addSource(GRID_SOURCE, { type: "vector", url: gridUrl });
+
+    const gridLayer: maplibregl.SymbolLayerSpecification = {
+      id: GRID_LAYER,
+      type: "symbol",
+      source: GRID_SOURCE,
+      "source-layer": "grid",
+      minzoom: GRID_LABEL_MINZOOM,
+      layout: {
+        "text-field": [
+          "concat",
+          [
+            "number-format",
+            // Tiles always arrive in the model's native unit, so the
+            // conversion has to happen as an expression rather than in JS.
+            tileValueExpression(
+              def.nativeUnit,
+              unitsStore.temperature,
+              unitsStore.wind,
+            ),
+            {
+              "min-fraction-digits": def.valueDecimals,
+              "max-fraction-digits": def.valueDecimals,
+            },
+          ],
+          def.valueSuffix,
+        ],
+        "text-font": LABEL_FONT,
+        "text-size": ["interpolate", ["linear"], ["zoom"], 4, 10, 8, 13],
+        // Collision handling does the thinning for us: the grid is denser than
+        // the screen, so MapLibre drops overlapping labels and what survives is
+        // an evenly spaced field of values.
+        "text-allow-overlap": false,
+        "text-padding": 6,
+      },
+      paint: {
+        "text-color": basemap === "detailed" ? "#F4F8FB" : "#16303F",
+        "text-halo-color":
+          basemap === "detailed" ? "rgba(7,11,16,0.85)" : "rgba(255,255,255,0.9)",
+        "text-halo-width": 1.2,
+      },
+    };
+
+    if (def.minLabelValue !== undefined) {
+      gridLayer.filter = [">=", ["get", "value"], def.minLabelValue];
+    }
+
+    map.addLayer(gridLayer, OVERLAY_ANCHOR);
+    appliedUrls[GRID_SOURCE] = gridUrl;
 
     restackOverlays();
   }
@@ -910,6 +1118,7 @@
       if (weatherLayer(worldWeatherLayer).hasDirection) {
         swap(ARROWS_SOURCE, omArrowsUrl(worldWeatherLayer, weatherTime, runIndex));
       }
+      swap(GRID_SOURCE, omGridUrl(worldWeatherLayer, weatherTime, runIndex));
     }
 
     if (showIsobars) swap(ISOBAR_SOURCE, omIsobarUrl(weatherTime, runIndex));
@@ -946,6 +1155,12 @@
       zoom: Math.max(map.getZoom(), 4),
       duration: 1000,
     });
+  }
+
+  /** Restore a saved view without animating — used when opening a shared link. */
+  export function jumpTo(center: [number, number], zoom?: number): void {
+    if (!map) return;
+    map.jumpTo({ center, zoom: zoom ?? map.getZoom() });
   }
 
   export function flyToLocation(lat: number, lng: number, zoom: number): void {
@@ -1077,8 +1292,8 @@
           },
         ],
       },
-      center: [0, 20],
-      zoom: 2,
+      center: DEFAULT_VIEW.center,
+      zoom: DEFAULT_VIEW.zoom,
       minZoom: 1,
       // Infinite horizontal pan, the way every serious weather map behaves —
       // a bounded world made ocean-spanning systems awkward to follow.
@@ -1178,6 +1393,7 @@
       // Hazard layers go on top of the EONET markers — a GDACS red alert is
       // the most important thing on the map when one exists.
       addHazardLayers();
+      addCityLayer();
 
       mapLoaded = true;
       renderMarkers();
@@ -1198,6 +1414,7 @@
   onDestroy(() => {
     stopPulseAnimation();
     if (clusterSyncTimer) clearTimeout(clusterSyncTimer);
+    if (cityRefreshTimer) clearTimeout(cityRefreshTimer);
     resizeObserver?.disconnect();
     hoverPopup?.remove();
     for (const marker of clusterLabelMarkers.values()) marker.remove();
@@ -1240,6 +1457,8 @@
     runIndex;
     basemap;
     protocolReady;
+    unitsStore.temperature;
+    unitsStore.wind;
     renderWeatherLayer();
   });
 
@@ -1263,6 +1482,17 @@
   $effect(() => {
     weatherTime;
     updateOverlayTimes();
+  });
+
+  // City readings depend on both the layer and the hour, and are a network
+  // round trip, so they're debounced rather than fired on every scrub tick.
+  $effect(() => {
+    mapLoaded;
+    worldWeatherLayer;
+    weatherTime;
+    unitsStore.temperature;
+    unitsStore.wind;
+    scheduleCityRefresh();
   });
 
   $effect(() => {

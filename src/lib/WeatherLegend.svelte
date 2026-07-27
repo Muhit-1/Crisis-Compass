@@ -1,6 +1,13 @@
 <script lang="ts">
   import { weatherLayer, type WeatherLayerKey } from './weatherLayers'
   import type { BasemapKey } from './basemaps'
+  import {
+    fromCelsius,
+    fromMetresPerSecond,
+    TEMPERATURE_SUFFIX,
+    WIND_SUFFIX,
+    unitsStore,
+  } from './units.svelte'
 
   interface Props {
     layer: WeatherLayerKey
@@ -39,7 +46,19 @@
     try {
       const { getColorScale } = await import('@openmeteo/weather-map-layer')
       const scale = getColorScale(variable, dark)
-      unit = scale.unit ?? ''
+      const native = scale.unit ?? ''
+      const convert =
+        native === '°C'
+          ? (v: number) => fromCelsius(v, unitsStore.temperature)
+          : native === 'm/s'
+            ? (v: number) => fromMetresPerSecond(v, unitsStore.wind)
+            : (v: number) => v
+      unit =
+        native === '°C'
+          ? TEMPERATURE_SUFFIX[unitsStore.temperature]
+          : native === 'm/s'
+            ? WIND_SUFFIX[unitsStore.wind]
+            : native
 
       if (scale.type === 'rgba') {
         const span = scale.max - scale.min
@@ -48,7 +67,7 @@
           return {
             at: t,
             color: rgba(color),
-            label: i === 0 || i === scale.colors.length - 1 ? tidy(scale.min + t * span) : undefined,
+            label: i === 0 || i === scale.colors.length - 1 ? tidy(convert(scale.min + t * span)) : undefined,
           }
         })
       } else {
@@ -61,7 +80,7 @@
         stops = points.map((value, i) => ({
           at: (value - min) / span,
           color: rgba(scale.colors[i] ?? scale.colors[scale.colors.length - 1]),
-          label: i % labelEvery === 0 || i === points.length - 1 ? tidy(value) : undefined,
+          label: i % labelEvery === 0 || i === points.length - 1 ? tidy(convert(value)) : undefined,
         }))
       }
     } catch {
@@ -72,6 +91,9 @@
 
   $effect(() => {
     void buildLegend(def.variable, basemap === 'detailed')
+    // Re-read on unit change so the bar relabels.
+    unitsStore.temperature
+    unitsStore.wind
   })
 
   const gradient = $derived(
