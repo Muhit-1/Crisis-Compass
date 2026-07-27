@@ -1,7 +1,0 @@
-Save the four screenshots from the conversation into this folder with these
-exact names so the README picks them up:
-
-  01-default-view.png       political world map, hazards visible
-  02-hazards.png            alerts and quakes across Asia, map key open
-  03-wind-layer.png         wind layer, city values, forecast panel
-  04-temperature-layer.png  temperature layer over Middle East / South Asia
