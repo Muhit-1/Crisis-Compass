@@ -1506,7 +1506,7 @@
   <div bind:this={mapContainer} class="h-full w-full"></div>
 
   <!-- Status stack sits below the floating header, clear of the brand pill. -->
-  <div class="pointer-events-none absolute top-16 left-3 z-20 flex flex-col items-start gap-2">
+  <div class="pointer-events-none absolute top-28 left-3 z-20 flex flex-col items-start gap-2 sm:top-16">
     {#if error}
       <div
         class="glass pointer-events-auto flex max-w-xs flex-col gap-2 rounded-xl px-3 py-2 text-sm text-sev-high"

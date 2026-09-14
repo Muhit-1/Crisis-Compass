@@ -109,7 +109,12 @@
    * column, so they take turns rather than stacking on top of each other.
    */
   let openSection = $state<Section | null>(null);
-  let mapKeyOpen = $state(true);
+  // Closed by default on phones — open by default is fine when there's a full
+  // desktop viewport to grow into, but on a short phone screen it swallows
+  // most of the map on first paint.
+  let mapKeyOpen = $state(
+    typeof window === "undefined" || window.innerWidth >= 640,
+  );
 
   function setSection(section: Section | null) {
     openSection = section;
@@ -358,7 +363,7 @@
 
   <!-- Floating top bar: brand · what's on the map · location -->
   <header
-    class="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start gap-2 p-3"
+    class="pointer-events-none absolute inset-x-0 top-0 z-30 flex flex-wrap items-start gap-2 p-3"
   >
     <div
       class="glass pointer-events-auto flex shrink-0 items-center gap-2 rounded-full py-2 pr-4 pl-3"
@@ -369,7 +374,7 @@
       </h1>
     </div>
 
-    <div class="pointer-events-auto ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+    <div class="pointer-events-auto ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
       <StatusChips
         quakeCount={visibleQuakes.length}
         alertCount={visibleAlerts.length}
@@ -447,7 +452,7 @@
     with the live ticker above it.
   -->
   <div
-    class="pointer-events-none absolute bottom-20 left-3 z-30 flex max-h-[calc(100vh-12rem)] flex-col items-start gap-2 overflow-y-auto"
+    class="pointer-events-none absolute bottom-40 left-3 z-30 flex max-h-[calc(100vh-19rem)] max-w-[calc(100vw-1.5rem)] flex-col items-start gap-2 overflow-y-auto sm:bottom-20 sm:max-h-[calc(100vh-12rem)]"
   >
     <div class="pointer-events-auto">
       <LiveBar onJumpToEvent={jumpToEvent} />

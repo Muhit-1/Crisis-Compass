@@ -73,7 +73,7 @@
 <!-- Offset from the top so it clears the floating header. The icon rail lives
      on the left, so the right edge is free. -->
 <aside
-  class="glass absolute top-16 right-3 z-30 max-h-[calc(100vh-9rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl p-4"
+  class="glass absolute top-28 right-3 z-30 max-h-[calc(100vh-13rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl p-4 sm:top-16 sm:max-h-[calc(100vh-9rem)]"
 >
   <div class="flex items-start justify-between gap-2">
     <h2 class="flex items-center gap-2 text-sm font-semibold text-ink">

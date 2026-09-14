@@ -27,7 +27,7 @@
 </script>
 
 <aside
-  class="glass absolute top-16 right-3 z-30 max-h-[calc(100vh-9rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl p-4"
+  class="glass absolute top-28 right-3 z-30 max-h-[calc(100vh-13rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl p-4 sm:top-16 sm:max-h-[calc(100vh-9rem)]"
 >
   {#if quake}
     <div class="flex items-start justify-between gap-2">

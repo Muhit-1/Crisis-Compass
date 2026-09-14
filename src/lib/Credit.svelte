@@ -13,7 +13,7 @@
   href={PROFILE_URL}
   target="_blank"
   rel="noreferrer noopener"
-  class="credit glass group absolute right-3 bottom-[5.5rem] z-30 flex items-center gap-2.5 rounded-full py-2.5 pr-5 pl-4"
+  class="credit glass group absolute right-3 bottom-[5.5rem] z-30 hidden items-center gap-2.5 rounded-full py-2.5 pr-5 pl-4 sm:flex"
   title="View muhit-1 on GitHub"
 >
   <span class="text-muted transition-colors group-hover:text-accent">

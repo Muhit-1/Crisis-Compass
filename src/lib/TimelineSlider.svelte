@@ -85,16 +85,16 @@
 
 <div class="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex flex-col items-center gap-1.5">
   {#if store.runError}
-    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[12px] text-sev-high">
+    <p class="glass pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-2xl px-3 py-1 text-center text-[12px] text-sev-high">
       Weather model unavailable: {store.runError}
       <button type="button" class="ml-1 underline" onclick={() => store.retryRun()}>Retry</button>
     </p>
   {:else if store.isPast && store.loading}
-    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[12px] text-muted">
+    <p class="glass pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-2xl px-3 py-1 text-center text-[12px] text-muted">
       Loading {TIMELINE_WINDOW_DAYS}-day event history…
     </p>
   {:else if store.isPast && store.error}
-    <p class="glass pointer-events-auto rounded-full px-3 py-1 text-[12px] text-sev-high">
+    <p class="glass pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-2xl px-3 py-1 text-center text-[12px] text-sev-high">
       Couldn't load history: {store.error}
       <button type="button" class="ml-1 underline" onclick={() => store.retry()}>Retry</button>
     </p>

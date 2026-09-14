@@ -143,7 +143,7 @@
 -->
 <!-- z-40: above the bottom-left legend stack, so an open menu is never the thing
      that gets covered. The rail itself sits clear of that stack entirely. -->
-<div class="absolute top-28 left-3 z-40 flex items-start gap-2">
+<div class="absolute top-44 left-3 z-40 flex items-start gap-2 sm:top-28">
   <!-- Icon rail -->
   <nav class="glass flex flex-col gap-1 rounded-2xl p-1.5">
     {#each RAIL as item (item.id)}
