@@ -125,7 +125,7 @@ directly from the browser with no backend of its own.
 | [NASA EONET](https://eonet.gsfc.nasa.gov/) | Natural event catalogue | Wildfires, storms, ice, volcanoes and more |
 | [USGS earthquake feeds](https://earthquake.usgs.gov/earthquakes/feed/) | Earthquakes | Pre-generated GeoJSON, updates every minute |
 | [GDACS](https://www.gdacs.org/) | Official disaster alert levels | UN OCHA and EC JRC |
-| [CARTO basemaps](https://carto.com/basemaps/) | Dark base map | Attribution required |
+| [Esri World Dark Gray Canvas](https://www.arcgis.com/home/item.html?id=1970c1995b8f44749f4b9b6e81b5ba45) | Dark base map and labels | Attribution required |
 | [MapLibre demo tiles](https://demotiles.maplibre.org/) | Political base map and country labels | See limitations |
 
 ### Forecast models
@@ -367,7 +367,7 @@ Weather data by [Open-Meteo](https://open-meteo.com/). Natural events by
 [NASA EONET](https://eonet.gsfc.nasa.gov/). Earthquakes by
 [USGS](https://earthquake.usgs.gov/). Disaster alerts by
 [GDACS](https://www.gdacs.org/), a joint framework of UN OCHA and the European
-Commission. Base maps by [CARTO](https://carto.com/) and
+Commission. Base maps by [Esri](https://www.esri.com/) and
 [MapLibre](https://maplibre.org/), built on
 [OpenStreetMap](https://www.openstreetmap.org/copyright) data.
 

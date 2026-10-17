@@ -31,6 +31,7 @@
     unitsStore,
   } from "./units.svelte";
   import type { WeatherSnapshot } from "../types/weather";
+  import { autoDismiss } from "./autoDismiss.svelte";
 
   import {
     ensureOmProtocolRegistered,
@@ -51,8 +52,10 @@
   import {
     BACKGROUND_COLOR,
     BASEMAP_LAYERS,
-    CARTO_ATTRIBUTION,
-    cartoTiles,
+    DARK_ATTRIBUTION,
+    darkBaseTiles,
+    darkLabelTiles,
+    DARK_MAX_ZOOM,
     countryFillColor,
     DEFAULT_VIEW,
     GLYPHS_URL,
@@ -83,6 +86,8 @@
     weatherTime: Date;
     /** Model-run metadata; weather layers can't resolve a URL without it. */
     runIndex?: RunIndex | null;
+    /** The model-run index failed to load — nothing to wait for. */
+    runFailed?: boolean;
     basemap?: BasemapKey;
     /** Mean sea-level pressure isolines, independent of the colour layer. */
     showIsobars?: boolean;
@@ -107,6 +112,7 @@
     userLocation = null,
     weatherTime,
     runIndex = null,
+    runFailed = false,
     basemap = "simple",
     showIsobars = false,
     onSelectPoint,
@@ -152,6 +158,23 @@
 
   let eventCount = $state(0);
   let weatherLayerError = $state<string | null>(null);
+
+  // Error toasts clear themselves after a few seconds.
+  const weatherErrorToast = autoDismiss(() => weatherLayerError);
+  const eventsErrorToast = autoDismiss(() => error);
+
+  // True while any weather source is still fetching its metadata or tiles.
+  let weatherTilesBusy = $state(false);
+  // Plain mirror of the flag above. syncWeatherBusy runs inside render effects,
+  // so it must never *read* reactive state or those effects would re-trigger
+  // themselves.
+  let weatherBusyNow = false;
+  let weatherBusyTimer: ReturnType<typeof setTimeout> | null = null;
+  // Safety valve: never leave the spinner up if a source stalls silently.
+  const WEATHER_BUSY_TIMEOUT_MS = 30_000;
+  // Same idea for the wait *before* any tile is requested (map style, model
+  // index and decoder still loading): stop spinning once it has gone on too long.
+  let weatherSetupGaveUp = $state(false);
 
   let eventById = new Map<string, EonetEvent>();
   let hoverPopup: maplibregl.Popup | null = null;
@@ -525,6 +548,10 @@
     // single sync.
     map.on("sourcedata", (e) => {
       if (e.sourceId === EVENTS_SOURCE) scheduleClusterSync();
+      else if (WEATHER_SOURCES.includes(e.sourceId)) syncWeatherBusy();
+    });
+    map.on("sourcedataloading", (e) => {
+      if (WEATHER_SOURCES.includes(e.sourceId)) syncWeatherBusy();
     });
     map.on("moveend", scheduleClusterSync);
     // City labels depend on what's on screen, so they follow the viewport.
@@ -863,12 +890,45 @@
     [GRID_SOURCE]: null,
   };
 
+  const WEATHER_SOURCES = [WEATHER_SOURCE, ARROWS_SOURCE, GRID_SOURCE, ISOBAR_SOURCE];
+
   function removeOverlay(sourceId: string, ...layerIds: string[]) {
     if (!map) return;
     for (const id of layerIds) if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(sourceId)) map.removeSource(sourceId);
     appliedUrls[sourceId] = null;
+    syncWeatherBusy();
   }
+
+  /** Recompute whether any weather source is still loading. */
+  function syncWeatherBusy() {
+    const m = map;
+    const busy =
+      !!m && WEATHER_SOURCES.some((id) => m.getSource(id) && !m.isSourceLoaded(id));
+    if (busy === weatherBusyNow) return;
+    weatherBusyNow = busy;
+    weatherTilesBusy = busy;
+
+    if (weatherBusyTimer) clearTimeout(weatherBusyTimer);
+    weatherBusyTimer = busy
+      ? setTimeout(() => {
+          weatherBusyNow = false;
+          weatherTilesBusy = false;
+        }, WEATHER_BUSY_TIMEOUT_MS)
+      : null;
+  }
+
+  /** Label for the loading pill, or null when nothing is waiting on data. */
+  const weatherLoadingLabel = $derived.by(() => {
+    const wanted = worldWeatherLayer
+      ? weatherLayer(worldWeatherLayer).label
+      : showIsobars
+        ? "Pressure isobars"
+        : null;
+    if (!wanted || weatherLayerError || runFailed) return null;
+    const settingUp = !protocolReady && !weatherSetupGaveUp;
+    return settingUp || weatherTilesBusy ? wanted : null;
+  });
 
   /**
    * Re-assert overlay draw order.
@@ -1196,20 +1256,19 @@
             url: SIMPLE_TILES_URL,
             attribution: "&copy; MapLibre",
           },
-          "carto-base": {
+          "dark-base": {
             type: "raster",
-            tiles: cartoTiles("dark_nolabels"),
-            // @2x tiles are 512px images for a 256px logical tile — declaring
-            // 256 here is what gets us retina detail rather than giant tiles.
+            tiles: darkBaseTiles(),
+            // Esri canvas tiles are 256px; past zoom 16 MapLibre overzooms them.
             tileSize: 256,
-            attribution: CARTO_ATTRIBUTION,
-            maxzoom: 19,
+            attribution: DARK_ATTRIBUTION,
+            maxzoom: DARK_MAX_ZOOM,
           },
-          "carto-labels": {
+          "dark-labels": {
             type: "raster",
-            tiles: cartoTiles("dark_only_labels"),
+            tiles: darkLabelTiles(),
             tileSize: 256,
-            maxzoom: 19,
+            maxzoom: DARK_MAX_ZOOM,
           },
         },
         layers: [
@@ -1242,7 +1301,7 @@
           {
             id: BASEMAP_LAYERS.detailedBase,
             type: "raster",
-            source: "carto-base",
+            source: "dark-base",
             layout: startSimple ? hidden : visible,
             minzoom: 0,
             maxzoom: 19,
@@ -1284,7 +1343,7 @@
           {
             id: BASEMAP_LAYERS.detailedLabels,
             type: "raster",
-            source: "carto-labels",
+            source: "dark-labels",
             layout: startSimple ? hidden : visible,
             minzoom: 0,
             maxzoom: 19,
@@ -1308,6 +1367,11 @@
     // tile fetch failures, style parse errors, etc. in dev tools.
     map.on("error", (e) => {
       console.error("[MapLibre error]", e.error?.message ?? e);
+      const sourceId = (e as { sourceId?: string }).sourceId;
+      if (sourceId && WEATHER_SOURCES.includes(sourceId) && !weatherLayerError) {
+        weatherLayerError = "Couldn't load weather data — check your connection.";
+        syncWeatherBusy();
+      }
     });
 
     // Re-add attribution as a properly typed control
@@ -1450,6 +1514,17 @@
     syncHazardData();
   });
 
+  // Restart the setup patience whenever a different overlay is requested.
+  $effect(() => {
+    worldWeatherLayer;
+    showIsobars;
+    weatherSetupGaveUp = false;
+    const timer = setTimeout(() => {
+      weatherSetupGaveUp = true;
+    }, WEATHER_BUSY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  });
+
   // Rebuild when the layer, model run, or palette changes...
   $effect(() => {
     mapLoaded;
@@ -1507,11 +1582,25 @@
 
   <!-- Status stack sits below the floating header, clear of the brand pill. -->
   <div class="pointer-events-none absolute top-28 left-3 z-20 flex flex-col items-start gap-2 sm:top-16">
-    {#if error}
+    {#if weatherLoadingLabel}
+      <div
+        class="glass pointer-events-auto flex items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-medium text-muted"
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          class="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent"
+          aria-hidden="true"
+        ></span>
+        Loading {weatherLoadingLabel.toLowerCase()}…
+      </div>
+    {/if}
+
+    {#if eventsErrorToast.message}
       <div
         class="glass pointer-events-auto flex max-w-xs flex-col gap-2 rounded-xl px-3 py-2 text-sm text-sev-high"
       >
-        <span>Couldn't load events: {error}</span>
+        <span>Couldn't load events: {eventsErrorToast.message}</span>
         {#if onRetry}
           <button
             type="button"
@@ -1524,13 +1613,13 @@
       </div>
     {/if}
 
-    {#if weatherLayerError}
+    {#if weatherErrorToast.message}
       <div class="glass pointer-events-auto max-w-xs rounded-xl px-3 py-2 text-[13px] text-sev-high">
-        Weather layer: {weatherLayerError}
+        Weather layer: {weatherErrorToast.message}
       </div>
     {/if}
 
-    {#if !loading && !error}
+    {#if !loading && !eventsErrorToast.message}
       <div
         class="glass pointer-events-auto rounded-full px-3 py-1 text-[13px] font-medium text-muted tabular-nums"
       >

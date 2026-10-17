@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack } from "svelte";
+  import { autoDismiss } from "./lib/autoDismiss.svelte";
   import MapView from "./lib/MapView.svelte";
   import FilterSidebar, { type Section } from "./lib/FilterSidebar.svelte";
   import EventPanel from "./lib/EventPanel.svelte";
@@ -145,6 +146,7 @@
   let userLocation = $state<UserLocation | null>(null);
   let nearMeStatus = $state<"idle" | "locating" | "error">("idle");
   let nearMeError = $state<string | null>(null);
+  const nearMeErrorToast = autoDismiss(() => nearMeError);
   let nearMeWeather = $state<WeatherSnapshot | null>(null);
   let nearMeWeatherLoading = $state(false);
 
@@ -358,6 +360,7 @@
       {showIsobars}
       weatherTime={timelineStore.selectedTime}
       runIndex={timelineStore.run}
+      runFailed={!!timelineStore.runError}
     />
   </div>
 
@@ -382,11 +385,11 @@
         {showQuakes}
         {showAlerts}
       />
-      {#if nearMeError}
+      {#if nearMeErrorToast.message}
         <span
           class="glass hidden max-w-[16rem] truncate rounded-full px-3 py-1.5 text-[12px] text-sev-high lg:block"
         >
-          {nearMeError}
+          {nearMeErrorToast.message}
         </span>
       {/if}
 

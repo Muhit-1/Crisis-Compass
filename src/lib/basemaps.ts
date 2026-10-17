@@ -34,8 +34,8 @@ export const BASEMAP_LAYERS = {
   simpleLand: 'simple-land',
   simpleBorders: 'simple-borders',
   simpleLabels: 'simple-labels',
-  detailedBase: 'carto-base',
-  detailedLabels: 'carto-labels',
+  detailedBase: 'dark-base',
+  detailedLabels: 'dark-labels',
 } as const
 
 /**
@@ -98,13 +98,23 @@ export const SIMPLE_CENTROIDS_LAYER = 'centroids'
 export const GLYPHS_URL = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
 export const LABEL_FONT = ['Open Sans Semibold']
 
-export const CARTO_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+/**
+ * Dark detailed basemap: Esri's World Dark Gray Canvas, split into geography
+ * and a labels-only reference layer so weather can sit between them. Keyless
+ * and CORS-enabled. (CARTO's free raster tiles were used before, but now stamp
+ * "API KEY REQUIRED" across every tile.) Esri's canvas tops out at zoom 16.
+ */
+export const DARK_ATTRIBUTION =
+  'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors'
 
-const CARTO_SUBDOMAINS = ['a', 'b', 'c', 'd']
+export const DARK_MAX_ZOOM = 16
 
-export function cartoTiles(style: string): string[] {
-  return CARTO_SUBDOMAINS.map(
-    (s) => `https://${s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}@2x.png`,
-  )
+const ESRI_CANVAS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas'
+
+export function darkBaseTiles(): string[] {
+  return [`${ESRI_CANVAS}/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`]
+}
+
+export function darkLabelTiles(): string[] {
+  return [`${ESRI_CANVAS}/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`]
 }

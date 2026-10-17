@@ -1,8 +1,13 @@
 <script lang="ts">
   import { timelineStore, TIMELINE_WINDOW_DAYS } from './timelineStore.svelte'
   import Icon from './Icon.svelte'
+  import { autoDismiss } from './autoDismiss.svelte'
 
   const store = timelineStore
+
+  // Error banners clear themselves after a few seconds.
+  const runErrorToast = autoDismiss(() => store.runError)
+  const historyErrorToast = autoDismiss(() => store.error)
 
   function addHours(date: Date, hours: number): Date {
     return new Date(date.getTime() + hours * 3_600_000)
@@ -84,18 +89,18 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex flex-col items-center gap-1.5">
-  {#if store.runError}
+  {#if runErrorToast.message}
     <p class="glass pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-2xl px-3 py-1 text-center text-[12px] text-sev-high">
-      Weather model unavailable: {store.runError}
+      Weather model unavailable: {runErrorToast.message}
       <button type="button" class="ml-1 underline" onclick={() => store.retryRun()}>Retry</button>
     </p>
   {:else if store.isPast && store.loading}
     <p class="glass pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-2xl px-3 py-1 text-center text-[12px] text-muted">
       Loading {TIMELINE_WINDOW_DAYS}-day event history…
     </p>
-  {:else if store.isPast && store.error}
+  {:else if store.isPast && historyErrorToast.message}
     <p class="glass pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-2xl px-3 py-1 text-center text-[12px] text-sev-high">
-      Couldn't load history: {store.error}
+      Couldn't load history: {historyErrorToast.message}
       <button type="button" class="ml-1 underline" onclick={() => store.retry()}>Retry</button>
     </p>
   {/if}

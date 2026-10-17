@@ -26,8 +26,10 @@ import type { IconName } from './icons'
  * extra metadata round-trip (0.5–1s) per request — unusable during playback.
  */
 
-const TILE_BASE = 'https://map-tiles.open-meteo.com/data_spatial'
+const TILE_BASE = 'https://openmeteo.s3.amazonaws.com/data_spatial'
 const RUN_INTERVAL_HOURS = 6
+/** Give up on the run index rather than leave the layer loading forever. */
+const RUN_INDEX_TIMEOUT_MS = 15_000
 
 /**
  * Global models that publish every variable this app draws.
@@ -246,8 +248,11 @@ export async function loadRunIndex(model: ModelId = DEFAULT_MODEL): Promise<RunI
 
   let res: Response
   try {
-    res = await fetch(url)
-  } catch {
+    res = await fetch(url, { signal: AbortSignal.timeout(RUN_INDEX_TIMEOUT_MS) })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new Error('Open-Meteo map tiles timed out — try again in a moment.')
+    }
     throw new Error('Could not reach Open-Meteo map tiles — check your network connection.')
   }
 
