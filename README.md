@@ -361,7 +361,7 @@ viewer knows what any of them mean.
 
 ## Credits
 
-Built by [muhit-1](https://github.com/muhit-1).
+Built by [Muhit Rahman](https://github.com/muhit-1).
 
 Weather data by [Open-Meteo](https://open-meteo.com/). Natural events by
 [NASA EONET](https://eonet.gsfc.nasa.gov/). Earthquakes by
