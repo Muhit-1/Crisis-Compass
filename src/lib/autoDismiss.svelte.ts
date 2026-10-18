@@ -18,7 +18,7 @@ export function autoDismiss(
     const message = getMessage() ?? null
     if (!message) {
       dismissed = null
-      return
+      return 
     }
     if (message === dismissed) return
 
